@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Save, Loader2, AlertCircle, Check, Edit2, X, FileText, BrainCircuit, Calendar, User, ShieldCheck, Target, TrendingUp, DollarSign, Scale } from 'lucide-react';
+import { Save, Loader2, AlertCircle, Check, Edit2, X, FileText, BrainCircuit, Calendar, User, ShieldCheck, Target, TrendingUp, DollarSign, Scale, Printer, Download } from 'lucide-react';
 import { IPSDocument, TargetAllocation, Client } from '../types';
+import { toPng } from 'html-to-image';
+import jsPDF from 'jspdf';
 
 interface IPSEditorProps {
   ips: IPSDocument & { target_allocations: TargetAllocation[] };
@@ -29,6 +31,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -83,11 +86,74 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
   // Helper for Advisor Name
   const advisorName = ips.clients?.advisors?.full_name || "Wealth Advisor";
 
+  const handleDownloadPDF = async () => {
+    setIsGeneratingPDF(true);
+    try {
+      const input = document.getElementById('ips-document');
+      if (!input) return;
+
+      // Create a wrapper to isolate the clone and ensure fixed width
+      const wrapper = document.createElement('div');
+      wrapper.style.position = 'absolute';
+      wrapper.style.left = '-9999px';
+      wrapper.style.top = '0';
+      wrapper.style.width = '1024px';
+      wrapper.style.zIndex = '-1';
+      document.body.appendChild(wrapper);
+
+      // Clone the node
+      const clone = input.cloneNode(true) as HTMLElement;
+      
+      // Reset styles that might interfere with full capture
+      clone.style.width = '100%';
+      clone.style.maxWidth = 'none';
+      clone.style.height = 'auto';
+      clone.style.maxHeight = 'none';
+      clone.style.overflow = 'visible';
+      clone.style.margin = '0';
+      clone.style.transform = 'none';
+      
+      wrapper.appendChild(clone);
+
+      // Wait for layout and potential font rendering
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const dataUrl = await toPng(clone, {
+        cacheBust: false, // Disable cache bust to avoid reloading resources
+        backgroundColor: '#ffffff',
+        width: 1024,
+        height: clone.scrollHeight,
+        style: {
+          transform: 'scale(1)', // Force scale
+        }
+      });
+
+      // console.log('Generated image size:', dataUrl.length);
+
+      const pdfHeight = clone.scrollHeight;
+      document.body.removeChild(wrapper);
+
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: [1024, pdfHeight]
+      });
+
+      pdf.addImage(dataUrl, 'PNG', 0, 0, 1024, pdfHeight);
+      pdf.save(`IPS_${client.last_name}_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   if (!isEditing) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 print:space-y-0">
         {/* Actions Bar */}
-        <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm print:hidden relative z-10">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-slate-100 rounded-lg">
               <FileText className="w-5 h-5 text-slate-600" />
@@ -106,6 +172,15 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
               {formData.status === 'Finalized' ? <ShieldCheck className="w-3.5 h-3.5" /> : null}
               {formData.status === 'Finalized' ? 'Active Policy' : 'Draft Mode'}
             </span>
+            <button
+              type="button"
+              onClick={handleDownloadPDF}
+              disabled={isGeneratingPDF}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm cursor-pointer relative z-20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGeneratingPDF ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              {isGeneratingPDF ? 'Generating PDF...' : 'Download PDF'}
+            </button>
             {viewerRole === 'advisor' && (
               <button
                 onClick={() => setIsEditing(true)}
@@ -119,14 +194,14 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
         </div>
 
         {success && (
-          <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-3 text-emerald-800 animate-in fade-in slide-in-from-top-2">
+          <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-3 text-emerald-800 animate-in fade-in slide-in-from-top-2 print:hidden">
             <Check className="w-5 h-5 shrink-0 mt-0.5" />
             <p className="text-sm font-medium">IPS updated successfully.</p>
           </div>
         )}
 
         {/* DOCUMENT VIEW */}
-        <div className="bg-white shadow-lg rounded-xl border border-slate-200 overflow-hidden max-w-5xl mx-auto print:shadow-none print:border-none">
+        <div id="ips-document" className="bg-white shadow-lg rounded-xl border border-slate-200 overflow-hidden max-w-5xl mx-auto print:shadow-none print:border-none print:max-w-none print:m-0 print:rounded-none">
           
           {/* Header Section */}
           <div className="bg-slate-50 border-b border-slate-200 p-10">
@@ -336,7 +411,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                       viewerRole === 'client' && onAccept && ips.status === 'Finalized' && (
                         <button
                           onClick={onAccept}
-                          className="px-4 py-1.5 bg-blue-600 text-white text-xs font-bold uppercase tracking-wider rounded hover:bg-blue-700 transition-colors mb-1"
+                          className="px-4 py-1.5 bg-blue-600 text-white text-xs font-bold uppercase tracking-wider rounded hover:bg-blue-700 transition-colors mb-1 print:hidden"
                         >
                           Accept & Sign
                         </button>
@@ -366,7 +441,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                       viewerRole === 'advisor' && onAccept && ips.status === 'Finalized' && (
                         <button
                           onClick={onAccept}
-                          className="px-4 py-1.5 bg-blue-600 text-white text-xs font-bold uppercase tracking-wider rounded hover:bg-blue-700 transition-colors mb-1"
+                          className="px-4 py-1.5 bg-blue-600 text-white text-xs font-bold uppercase tracking-wider rounded hover:bg-blue-700 transition-colors mb-1 print:hidden"
                         >
                           Accept & Sign
                         </button>

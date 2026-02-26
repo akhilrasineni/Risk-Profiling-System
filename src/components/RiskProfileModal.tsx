@@ -220,11 +220,11 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     (data.ai_confidence_score > 1 ? data.ai_confidence_score >= 65 : data.ai_confidence_score >= 0.65);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl overflow-hidden flex flex-col h-[92vh]">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:block">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl overflow-hidden flex flex-col h-[92vh] print:h-auto print:shadow-none print:rounded-none print:overflow-visible">
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white z-10">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white z-10 print:hidden">
           <div>
             <div className="flex items-center gap-3">
               <h3 className="text-lg font-semibold text-slate-900">Client Portfolio Management</h3>
@@ -244,7 +244,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         </div>
 
         {/* Tabs */}
-        <div className="px-6 border-b border-slate-200 bg-slate-50/50 flex gap-6">
+        <div className="px-6 border-b border-slate-200 bg-slate-50/50 flex gap-6 print:hidden">
           <button
             onClick={() => setActiveTab('profile')}
             className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
@@ -270,7 +270,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         </div>
         
         {/* Content Area */}
-        <div className="p-6 overflow-y-auto bg-slate-50/30 flex-1">
+        <div className="p-6 overflow-y-auto bg-slate-50/30 flex-1 print:overflow-visible print:bg-white print:p-0">
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <Loader2 className="w-8 h-8 animate-spin text-slate-300" />
