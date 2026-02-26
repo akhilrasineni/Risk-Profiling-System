@@ -2,10 +2,14 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { Client, RiskQuestion, RiskQuestionnaire } from "../types";
 
 export class AIService {
-  private ai: GoogleGenAI;
-
-  constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+  
+  private getClient(): GoogleGenAI {
+    const apiKey = process.env.GEMINI_KEY;
+    if (!apiKey) {
+      console.error("CRITICAL: Missing GEMINI_KEY in process.env");
+      throw new Error("GEMINI_KEY not configured");
+    }
+    return new GoogleGenAI({ apiKey });
   }
 
   /**
@@ -38,7 +42,8 @@ export class AIService {
       4.  "response_stability" (integer 0-100): How "stable" the profile feels (e.g., does it feel like a real person's profile or random guesses).
     `;
 
-    const result = await this.ai.models.generateContent({
+    const ai = this.getClient();
+    const result = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: [{ parts: [{ text: prompt }] }],
       config: { 
@@ -86,13 +91,69 @@ export class AIService {
       Tone: Professional, objective, and data-driven.
     `;
 
-    const result = await this.ai.models.generateContent({
+    const ai = this.getClient();
+    const result = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: [{ parts: [{ text: prompt }] }],
       config: { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
     });
 
     return result.text || "Analysis complete, but no text returned.";
+  }
+  async generateFullIPS(
+    client: Client,
+    riskCategory: string,
+    timeHorizon: number,
+    liquidityNeeds: number,
+    taxConsiderations: number,
+    esgPreference: string,
+    concentratedPosition: string,
+    constraints: any
+  ) {
+    const prompt = `
+      Generate a comprehensive Investment Policy Statement (IPS) for a client with the following profile:
+      
+      Risk Category: ${riskCategory}
+      Time Horizon: ${timeHorizon} years
+      Liquidity Needs: ${liquidityNeeds}
+      Tax Considerations: ${taxConsiderations}%
+      ESG Preference: ${esgPreference}
+      Concentrated Position: ${concentratedPosition}
+      Constraints: ${JSON.stringify(constraints)}
+
+      Please provide the output in the following JSON format:
+      {
+        "investment_objective": "A detailed paragraph describing the client's investment goals, return expectations, and risk tolerance.",
+        "rebalancing_frequency": "Quarterly" | "Semi-Annually" | "Annually",
+        "rebalancing_strategy_description": "A detailed paragraph explaining the rebalancing strategy, including drift tolerance and methodology.",
+        "monitoring_review_description": "A detailed paragraph outlining the frequency and scope of portfolio reviews and performance monitoring.",
+        "target_allocations": [
+          {
+            "asset_class": "Asset Class Name",
+            "target_percent": 0,
+            "lower_band": 0,
+            "upper_band": 0
+          }
+        ]
+      }
+
+      Ensure the target allocations sum to 100%. The asset classes should be appropriate for the risk profile.
+      Common asset classes: US Equity, International Equity, Emerging Markets, US Bonds, Global Bonds, Real Estate, Cash.
+      Set lower and upper bands (e.g., +/- 5% or 10% of target) to allow for drift.
+    `;
+
+    const ai = this.getClient();
+    const result = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{ parts: [{ text: prompt }] }],
+      config: { 
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: "application/json"
+      }
+    });
+
+    const aiResponse = result.text || "{}";
+    return JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
   }
 }
 

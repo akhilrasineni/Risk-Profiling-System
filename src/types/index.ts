@@ -79,6 +79,32 @@ export interface RiskAssessmentResponse {
   score_given: number;
 }
 
+export interface IPSDocument {
+  id: string;
+  client_id: string;
+  risk_assessment_id: string;
+  risk_category: string;
+  investment_objective: string;
+  time_horizon_years: number;
+  liquidity_needs: number;
+  tax_considerations: number;
+  rebalancing_frequency: string;
+  status: 'Draft' | 'Finalized';
+  created_at: string;
+  risk_assessments?: RiskAssessment;
+  rebalancing_strategy_description?: string;
+  monitoring_review_description?: string;
+}
+
+export interface TargetAllocation {
+  id: string;
+  ips_id: string;
+  asset_class: string;
+  target_percent: number;
+  lower_band: number;
+  upper_band: number;
+}
+
 export type UserSession = {
   id: string;
   role: 'advisor' | 'client';

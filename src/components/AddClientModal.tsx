@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { AlertCircle, Loader2, X } from 'lucide-react';
 
 interface AddClientModalProps {
@@ -42,10 +42,10 @@ export default function AddClientModal({ advisorId, onClose, onSuccess }: AddCli
       if (res.ok && data.status === 'ok') {
         onSuccess();
       } else {
-        setError(data.message || 'Failed to create client');
+        setError(data.message || 'Failed to create client. Please try again.');
       }
     } catch (err: any) {
-      setError(err.message || 'Network error');
+      setError(`Network error: ${err.message || 'Please check your connection'}`);
     } finally {
       setLoading(false);
     }

@@ -5,6 +5,7 @@ import advisorRoutes from "./routes/advisors.ts";
 import clientRoutes from "./routes/clients.ts";
 import questionnaireRoutes from "./routes/questionnaires.ts";
 import assessmentRoutes from "./routes/assessments.ts";
+import ipsRoutes from "./routes/ips.ts";
 import { supabase } from "../db/supabase.ts";
 
 export async function createApp() {
@@ -40,6 +41,7 @@ export async function createApp() {
   app.use("/api/clients", clientRoutes);
   app.use("/api/questionnaires", questionnaireRoutes);
   app.use("/api/assessments", assessmentRoutes);
+  app.use("/api/ips", ipsRoutes);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

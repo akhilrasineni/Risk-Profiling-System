@@ -174,7 +174,7 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
         questionnaire_id: questionnaire.id,
         responses: Object.entries(answers).map(([question_id, selected_option_id]) => ({
           question_id,
-          selected_option_id
+          selected_option_id: String(selected_option_id)
         })),
         ai_behavior_summary: summaryWithBreakdown,
         ai_confidence_score
@@ -191,10 +191,10 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
       if (response.ok && data.status === 'ok') {
         setSubmitSuccess(true);
       } else {
-        setError(data.message || 'Failed to submit questionnaire');
+        setError(`Submission failed: ${data.message || 'Please try again'}`);
       }
     } catch (err: any) {
-      setError(err.message || 'Network error occurred during submission');
+      setError(`Network error: ${err.message || 'Please check your connection'}`);
     } finally {
       setSubmitting(false);
     }
