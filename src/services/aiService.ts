@@ -108,7 +108,8 @@ export class AIService {
     taxConsiderations: number,
     esgPreference: string,
     concentratedPosition: string,
-    constraints: any
+    constraints: any,
+    staticAllocations: any[]
   ) {
     const prompt = `
       Generate a comprehensive Investment Policy Statement (IPS) for a client with the following profile:
@@ -121,12 +122,23 @@ export class AIService {
       Concentrated Position: ${concentratedPosition}
       Constraints: ${JSON.stringify(constraints)}
 
+      **Asset Allocation Strategy:**
+      Start with the following BASE ALLOCATION (Static Model):
+      ${JSON.stringify(staticAllocations)}
+
+      Your task is to "play around" with this base allocation to better fit the client's specific profile (e.g., time horizon, tax situation). 
+      - You may adjust the percentages slightly (e.g., +/- 5-10%).
+      - You may break down broad categories (e.g., "Equity") into sub-classes (e.g., "US Equity", "International Equity").
+      - Ensure the total sums to 100%.
+
       Please provide the output in the following JSON format:
       {
         "investment_objective": "A detailed paragraph describing the client's investment goals, return expectations, and risk tolerance.",
+        "goals_description": "A detailed paragraph elaborating on the client's specific financial goals, time horizon implications, and liquidity needs.",
         "rebalancing_frequency": "Quarterly" | "Semi-Annually" | "Annually",
         "rebalancing_strategy_description": "A detailed paragraph explaining the rebalancing strategy, including drift tolerance and methodology.",
         "monitoring_review_description": "A detailed paragraph outlining the frequency and scope of portfolio reviews and performance monitoring.",
+        "constraints_description": "A detailed paragraph summarizing the client's constraints, including liquidity needs, tax considerations, and any unique circumstances.",
         "target_allocations": [
           {
             "asset_class": "Asset Class Name",

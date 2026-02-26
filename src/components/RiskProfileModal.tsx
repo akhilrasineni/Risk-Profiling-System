@@ -196,6 +196,26 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     }
   };
 
+  const handleAcceptIPS = async () => {
+    if (!ipsDocument) return;
+    try {
+      const res = await fetch(`/api/ips/${ipsDocument.id}/accept`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'advisor' })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        setIpsDocument(prev => prev ? { ...prev, advisor_accepted_at: new Date().toISOString() } : null);
+        // alert('IPS Accepted successfully.'); // Optional feedback
+      } else {
+        throw new Error(data.message);
+      }
+    } catch (err: any) {
+      alert('Failed to accept IPS: ' + err.message);
+    }
+  };
+
   const isEligibleForIPS = data && data.finalized_by_advisor && 
     (data.ai_confidence_score > 1 ? data.ai_confidence_score >= 65 : data.ai_confidence_score >= 0.65);
 
@@ -329,7 +349,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                       {/* Summary */}
                       <div className="bg-blue-50/50 border border-blue-100 p-6 rounded-xl relative">
                         <div className="absolute top-4 right-4">
-                          <span className="px-1.5 py-0.5 bg-blue-200 text-blue-800 text-[10px] font-bold rounded uppercase tracking-tighter">AI Generated</span>
+                          <span className="px-1.5 py-0.5 bg-blue-200 text-blue-800 text-[10px] font-bold rounded uppercase tracking-tighter">AI Analysis</span>
                         </div>
                         <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
                           <BrainCircuit className="w-4 h-4" />
@@ -516,7 +536,13 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
               {activeTab === 'ips' && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                   {ipsDocument ? (
-                    <IPSEditor ips={ipsDocument} client={client} onSave={handleSaveIPS} />
+                    <IPSEditor 
+                      ips={ipsDocument} 
+                      client={client} 
+                      onSave={handleSaveIPS} 
+                      onAccept={handleAcceptIPS}
+                      viewerRole="advisor"
+                    />
                   ) : (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
                       <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">

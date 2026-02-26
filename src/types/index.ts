@@ -1,8 +1,9 @@
 export interface Advisor {
   id: string;
-  first_name: string;
-  last_name: string;
+  full_name: string;
   email: string;
+  license_number: string | null;
+  created_at?: string;
 }
 
 export interface Client {
@@ -94,6 +95,18 @@ export interface IPSDocument {
   risk_assessments?: RiskAssessment;
   rebalancing_strategy_description?: string;
   monitoring_review_description?: string;
+  constraints_description?: string;
+  goals_description?: string;
+  finalized_at?: string;
+  advisor_accepted_at?: string;
+  client_accepted_at?: string;
+  clients?: {
+    first_name: string;
+    last_name: string;
+    advisors?: {
+      full_name: string;
+    };
+  };
 }
 
 export interface TargetAllocation {
@@ -108,7 +121,7 @@ export interface TargetAllocation {
 export type UserSession = {
   id: string;
   role: 'advisor' | 'client';
-  name: string;
+  name: string; // For client: first_name + last_name, for advisor: full_name
   rawData: any;
 };
 

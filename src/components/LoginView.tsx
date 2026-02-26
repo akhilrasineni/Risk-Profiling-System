@@ -32,9 +32,7 @@ export default function LoginView({ onLogin }: { onLogin: (user: UserSession) =>
         const user = data.user;
         const firstName = user.first_name || user.firstName || '';
         const lastName = user.last_name || user.lastName || '';
-        const name = (firstName || lastName) 
-          ? `${firstName} ${lastName}`.trim() 
-          : (user.email || user.id || 'User');
+        const name = role === 'advisor' ? user.full_name : ((firstName || lastName) ? `${firstName} ${lastName}`.trim() : (user.email || user.id || 'User'));
           
         onLogin({ id: user.id, role, name, rawData: user });
       } else {

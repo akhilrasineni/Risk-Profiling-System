@@ -19,7 +19,13 @@ router.post("/generate", async (req, res) => {
       .from('risk_assessments')
       .select(`
         *,
-        clients:client_id (*)
+        clients:client_id (
+          first_name,
+          last_name,
+          advisors:advisor_id (
+            full_name
+          )
+        )
       `)
       .eq('id', risk_assessment_id)
       .single();
@@ -80,8 +86,24 @@ router.post("/generate", async (req, res) => {
       }
     }
 
-    // 4. Generate Investment Objective via AI
-    const investmentObjective = await aiService.generateInvestmentObjective(client, riskCategory, timeHorizon);
+    // 4. Generate Full IPS via AI
+    const staticAllocations = [
+      { asset_class: 'Equity', target_percent: model.Equity },
+      { asset_class: 'Debt', target_percent: model.Debt },
+      { asset_class: 'Alternatives', target_percent: model.Alternatives }
+    ];
+
+    const aiResponse = await aiService.generateFullIPS(
+      client,
+      riskCategory,
+      timeHorizon,
+      client.liquidity_needs || 0,
+      client.tax_bracket || 0,
+      "None", // Default ESG
+      "None", // Default Concentrated Position
+      {}, // Default Constraints
+      staticAllocations
+    );
 
     // 5. Insert IPS Document
     const { data: ips, error: ipsError } = await supabase
@@ -90,11 +112,15 @@ router.post("/generate", async (req, res) => {
         client_id,
         risk_assessment_id,
         risk_category: riskCategory,
-        investment_objective: investmentObjective,
+        investment_objective: aiResponse.investment_objective,
         time_horizon_years: timeHorizon,
         liquidity_needs: client.liquidity_needs || 0,
         tax_considerations: client.tax_bracket || 0,
-        rebalancing_frequency: model.Rebalance,
+        rebalancing_frequency: aiResponse.rebalancing_frequency || model.Rebalance,
+        rebalancing_strategy_description: aiResponse.rebalancing_strategy_description,
+        monitoring_review_description: aiResponse.monitoring_review_description,
+        constraints_description: aiResponse.constraints_description,
+        goals_description: aiResponse.goals_description,
         status: 'Draft'
       })
       .select()
@@ -103,18 +129,21 @@ router.post("/generate", async (req, res) => {
     if (ipsError) throw ipsError;
 
     // 6. Insert Target Allocations
-    const allocations = [
-      { asset_class: 'Equity', target: model.Equity },
-      { asset_class: 'Debt', target: model.Debt },
-      { asset_class: 'Alternatives', target: model.Alternatives }
-    ];
+    // Use AI generated allocations if available, otherwise fallback to model
+    const allocationsToInsert = aiResponse.target_allocations && aiResponse.target_allocations.length > 0
+      ? aiResponse.target_allocations
+      : [
+          { asset_class: 'Equity', target_percent: model.Equity, lower_band: Math.max(0, model.Equity - 5), upper_band: Math.min(100, model.Equity + 5) },
+          { asset_class: 'Debt', target_percent: model.Debt, lower_band: Math.max(0, model.Debt - 5), upper_band: Math.min(100, model.Debt + 5) },
+          { asset_class: 'Alternatives', target_percent: model.Alternatives, lower_band: Math.max(0, model.Alternatives - 5), upper_band: Math.min(100, model.Alternatives + 5) }
+        ];
 
-    const allocationInserts = allocations.map(a => ({
+    const allocationInserts = allocationsToInsert.map((a: any) => ({
       ips_id: ips.id,
       asset_class: a.asset_class,
-      target_percent: a.target,
-      lower_band: Math.max(0, a.target - 5), // Simple +/- 5% range
-      upper_band: Math.min(100, a.target + 5)
+      target_percent: a.target_percent,
+      lower_band: a.lower_band,
+      upper_band: a.upper_band
     }));
 
     const { error: allocError } = await supabase
@@ -128,7 +157,14 @@ router.post("/generate", async (req, res) => {
       .from('ips_documents')
       .select(`
         *,
-        target_allocations (*)
+        target_allocations (*),
+        clients:client_id (
+          first_name,
+          last_name,
+          advisors:advisor_id (
+            full_name
+          )
+        )
       `)
       .eq('id', ips.id)
       .single();
@@ -152,7 +188,14 @@ router.get("/client/:client_id", async (req, res) => {
       .select(`
         *,
         target_allocations (*),
-        risk_assessments (*)
+        risk_assessments (*),
+        clients:client_id (
+          first_name,
+          last_name,
+          advisors:advisor_id (
+            full_name
+          )
+        )
       `)
       .eq('client_id', client_id)
       .order('created_at', { ascending: false })
@@ -180,22 +223,36 @@ router.put("/:id", async (req, res) => {
       liquidity_needs, 
       tax_considerations, 
       rebalancing_frequency,
+      rebalancing_strategy_description,
+      monitoring_review_description,
+      constraints_description,
+      goals_description,
       status,
       allocations 
     } = req.body;
 
     // 1. Update IPS Document fields
+    const updates: any = {
+      investment_objective,
+      time_horizon_years,
+      liquidity_needs,
+      tax_considerations,
+      rebalancing_frequency,
+      rebalancing_strategy_description,
+      monitoring_review_description,
+      constraints_description,
+      goals_description,
+      status,
+      updated_at: new Date().toISOString()
+    };
+
+    if (status === 'Finalized') {
+      updates.finalized_at = new Date().toISOString();
+    }
+
     const { data: ips, error: ipsError } = await supabase
       .from('ips_documents')
-      .update({
-        investment_objective,
-        time_horizon_years,
-        liquidity_needs,
-        tax_considerations,
-        rebalancing_frequency,
-        status,
-        updated_at: new Date().toISOString()
-      })
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
@@ -224,6 +281,59 @@ router.put("/:id", async (req, res) => {
     res.json({ status: "ok", data: ips });
   } catch (error: any) {
     console.error("Error updating IPS:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// Accept IPS Document
+router.put("/:id/accept", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body; // 'advisor' or 'client'
+
+    if (!role || (role !== 'advisor' && role !== 'client')) {
+      return res.status(400).json({ status: "error", message: "Invalid role specified" });
+    }
+
+    const updates: any = {};
+    const timestamp = new Date().toISOString();
+
+    if (role === 'advisor') {
+      updates.advisor_accepted_at = timestamp;
+    } else {
+      updates.client_accepted_at = timestamp;
+    }
+
+    // Check if both have accepted to finalize
+    // First fetch current state
+    const { data: currentIPS, error: fetchError } = await supabase
+      .from('ips_documents')
+      .select('advisor_accepted_at, client_accepted_at')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    if (role === 'advisor' && currentIPS.client_accepted_at) {
+      updates.status = 'Finalized';
+      updates.finalized_at = timestamp;
+    } else if (role === 'client' && currentIPS.advisor_accepted_at) {
+      updates.status = 'Finalized';
+      updates.finalized_at = timestamp;
+    }
+
+    const { data: ips, error: ipsError } = await supabase
+      .from('ips_documents')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (ipsError) throw ipsError;
+
+    res.json({ status: "ok", data: ips });
+  } catch (error: any) {
+    console.error("Error accepting IPS:", error);
     res.status(500).json({ status: "error", message: error.message });
   }
 });
