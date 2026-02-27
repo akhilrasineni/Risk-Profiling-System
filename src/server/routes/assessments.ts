@@ -1,45 +1,7 @@
 import { Router } from 'express';
 import { supabase } from '../../db/supabase.ts';
 
-import { aiService } from '../../services/aiService.ts';
-
 const router = Router();
-
-// Analyze inconsistencies in a risk assessment
-router.post("/:id/analyze", async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    // 1. Fetch the assessment and its responses
-    const { data: assessment, error: assessmentError } = await supabase
-      .from('risk_assessments')
-      .select(`
-        *,
-        responses:risk_assessment_responses (
-          *,
-          risk_questions (question_text),
-          risk_answer_options (option_text)
-        )
-      `)
-      .eq('id', id)
-      .single();
-
-    if (assessmentError || !assessment) {
-      return res.status(404).json({ status: "error", message: "Assessment not found" });
-    }
-
-    // 2. Call AI Service
-    const analysis = await aiService.analyzeInconsistencies(
-      assessment.risk_category,
-      assessment.responses
-    );
-
-    res.json({ status: "ok", data: analysis });
-  } catch (error: any) {
-    console.error("Analysis Error:", error);
-    res.status(500).json({ status: "error", message: error.message });
-  }
-});
 
 // Finalize a risk assessment
 router.post("/:id/finalize", async (req, res) => {

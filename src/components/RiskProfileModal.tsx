@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, Loader2, X, ShieldCheck, Activity, BrainCircuit, Search, Check, ClipboardList, FileText, User } from 'lucide-react';
+import { AlertCircle, Loader2, X, ShieldCheck, Activity, BrainCircuit, Search, Check, ClipboardList, FileText, User, Info } from 'lucide-react';
 import { Client, IPSDocument, TargetAllocation } from '../types';
 import IPSEditor from './IPSEditor';
+import PortfolioEditor from './PortfolioEditor';
+import { aiService } from '../services/aiService';
+import { ALLOCATION_MODELS, RiskCategory } from '../constants/allocationModels';
 
 interface RiskProfileModalProps {
   client: Client;
@@ -10,7 +13,7 @@ interface RiskProfileModalProps {
 }
 
 export default function RiskProfileModal({ client, onClose, onSuccess }: RiskProfileModalProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'ips'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'ips' | 'portfolio'>('profile');
   
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -29,6 +32,9 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   const [generatingIPS, setGeneratingIPS] = useState(false);
   const [ipsError, setIpsError] = useState<string | null>(null);
   const [ipsDocument, setIpsDocument] = useState<(IPSDocument & { target_allocations: TargetAllocation[] }) | null>(null);
+  const [portfolio, setPortfolio] = useState<any>(null);
+  const [buildingPortfolio, setBuildingPortfolio] = useState(false);
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -36,9 +42,13 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       try {
         // 1. Fetch Risk Assessment
         const resProfile = await fetch(`/api/clients/${client.id}/risk_assessment`);
+        if (!resProfile.ok) {
+          const errorText = await resProfile.text();
+          throw new Error(`Failed to load profile: ${resProfile.status} ${resProfile.statusText}${errorText ? ` - ${errorText.slice(0, 100)}` : ''}`);
+        }
         const jsonProfile = await resProfile.json();
         
-        if (resProfile.ok && jsonProfile.status === 'ok') {
+        if (jsonProfile.status === 'ok') {
           setData(jsonProfile.data);
           setOverrideCategory(jsonProfile.data.risk_category);
         } else {
@@ -47,9 +57,20 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
         // 2. Fetch Existing IPS (if any)
         const resIPS = await fetch(`/api/ips/client/${client.id}`);
-        const jsonIPS = await resIPS.json();
-        if (resIPS.ok && jsonIPS.status === 'ok' && jsonIPS.data) {
-          setIpsDocument(jsonIPS.data);
+        if (resIPS.ok) {
+          const jsonIPS = await resIPS.json();
+          if (jsonIPS.status === 'ok' && jsonIPS.data) {
+            setIpsDocument(jsonIPS.data);
+          }
+        }
+
+        // 3. Fetch Existing Portfolio (if any)
+        const resPort = await fetch(`/api/portfolios/client/${client.id}`);
+        if (resPort.ok) {
+          const jsonPort = await resPort.json();
+          if (jsonPort.status === 'ok' && jsonPort.data) {
+            setPortfolio(jsonPort.data);
+          }
         }
 
       } catch (err: any) {
@@ -66,24 +87,12 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     setAnalyzing(true);
     setAnalysisError(null);
     try {
-      const res = await fetch(`/api/assessments/${data.id}/analyze`, {
-        method: 'POST'
-      });
-      const json = await res.json();
-      if (res.ok && json.status === 'ok') {
-        setAnalysis(json.data);
-      } else {
-        let msg = json.message || 'Failed to analyze inconsistencies';
-        try {
-          const parsed = JSON.parse(msg);
-          if (parsed.error && parsed.error.message) {
-            msg = parsed.error.message;
-          }
-        } catch (e) {
-          // Not JSON, use original message
-        }
-        setAnalysisError(msg);
-      }
+      // Call AI Service directly from frontend
+      const result = await aiService.analyzeInconsistencies(
+        data.risk_category,
+        data.responses
+      );
+      setAnalysis(result);
     } catch (err: any) {
       console.error(err);
       setAnalysisError(err.message || 'Network error occurred during AI analysis');
@@ -147,33 +156,98 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     setGeneratingIPS(true);
     setIpsError(null);
     try {
-      const res = await fetch('/api/ips/generate', {
+      // 1. Eligibility Check
+      const score = data.ai_confidence_score;
+      const normalizedScore = score > 1 ? score / 100 : score;
+      
+      if (normalizedScore < 0.65) {
+        throw new Error(`AI Confidence Score too low (${(normalizedScore * 100).toFixed(1)}%). Minimum 65% required.`);
+      }
+
+      const riskCategory = data.risk_category as RiskCategory;
+      const model = ALLOCATION_MODELS[riskCategory];
+      if (!model) {
+        throw new Error(`Invalid risk category: ${riskCategory}`);
+      }
+
+      // 2. Determine Time Horizon from Responses
+      let timeHorizon = 5; // Default
+      const horizonResponse = data.responses?.find((r: any) => 
+        (r.risk_questions?.question_text || '').toLowerCase().includes('primary investment horizon') ||
+        (r.risk_questions?.question_text || '').toLowerCase().includes('investment horizon')
+      );
+
+      if (horizonResponse) {
+        const text = horizonResponse.risk_answer_options?.option_text || '';
+        const match = text.match(/(\d+)/);
+        if (match) {
+          timeHorizon = parseInt(match[1]);
+        }
+      }
+
+      // 2.5 Fetch Available Asset Classes
+      const assetClassesRes = await fetch('/api/portfolios/securities/asset-classes');
+      const assetClassesData = await assetClassesRes.json();
+      const availableAssetClasses = assetClassesData.status === 'ok' ? assetClassesData.data : ['Equity', 'Fixed Income', 'Alternatives'];
+
+      // 3. Generate Full IPS via AI (Frontend Call)
+      const staticAllocations = [
+        { asset_class: 'Equity', target_percent: model.Equity },
+        { asset_class: 'Debt', target_percent: model.Debt },
+        { asset_class: 'Alternatives', target_percent: model.Alternatives }
+      ];
+
+      const aiResponse = await aiService.generateFullIPS(
+        client,
+        riskCategory,
+        timeHorizon,
+        client.liquidity_needs || 0,
+        client.tax_bracket || 0,
+        "None",
+        "None",
+        {},
+        staticAllocations,
+        availableAssetClasses
+      );
+
+      // 4. Save to Backend
+      const res = await fetch('/api/ips/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           client_id: client.id,
-          risk_assessment_id: data.id
+          risk_assessment_id: data.id,
+          ips_data: {
+            risk_category: riskCategory,
+            investment_objective: aiResponse.investment_objective,
+            time_horizon_years: timeHorizon,
+            liquidity_needs: client.liquidity_needs || 0,
+            tax_considerations: client.tax_bracket || 0,
+            rebalancing_frequency: aiResponse.rebalancing_frequency || model.Rebalance,
+            rebalancing_strategy_description: aiResponse.rebalancing_strategy_description,
+            monitoring_review_description: aiResponse.monitoring_review_description,
+            constraints_description: aiResponse.constraints_description,
+            goals_description: aiResponse.goals_description
+          },
+          target_allocations: aiResponse.target_allocations
         })
       });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Failed to save IPS: ${res.status} ${res.statusText}${errorText ? ` - ${errorText.slice(0, 100)}` : ''}`);
+      }
+      
       const json = await res.json();
-      if (res.ok && json.status === 'ok') {
-        setIpsDocument(json.data); // Set the newly generated IPS
-        setActiveTab('ips'); // Switch to IPS tab
+      if (json.status === 'ok') {
+        setIpsDocument(json.data);
+        setActiveTab('ips');
       } else {
-        let msg = json.message || 'Failed to generate IPS';
-        try {
-          const parsed = JSON.parse(msg);
-          if (parsed.error && parsed.error.message) {
-            msg = parsed.error.message;
-          }
-        } catch (e) {
-          // Not JSON, use original message
-        }
-        setIpsError(msg);
+        setIpsError(json.message || 'Failed to save IPS');
       }
     } catch (err: any) {
       console.error(err);
-      setIpsError(err.message || 'Network error occurred');
+      setIpsError(err.message || 'Error occurred during IPS generation');
     } finally {
       setGeneratingIPS(false);
     }
@@ -207,12 +281,44 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       const data = await res.json();
       if (data.status === 'ok') {
         setIpsDocument(prev => prev ? { ...prev, advisor_accepted_at: new Date().toISOString() } : null);
-        // alert('IPS Accepted successfully.'); // Optional feedback
       } else {
         throw new Error(data.message);
       }
     } catch (err: any) {
       alert('Failed to accept IPS: ' + err.message);
+    }
+  };
+
+  const handleBuildPortfolio = async () => {
+    if (!ipsDocument) return;
+    setBuildingPortfolio(true);
+    setPortfolioError(null);
+    try {
+      const res = await fetch(`/api/ips/${ipsDocument.id}/build-portfolio`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        setPortfolio(data.data);
+        setActiveTab('portfolio');
+      } else {
+        throw new Error(data.message);
+      }
+    } catch (err: any) {
+      setPortfolioError(err.message);
+    } finally {
+      setBuildingPortfolio(false);
+    }
+  };
+
+  const handleSavePortfolio = async () => {
+    // Refresh portfolio data
+    const resPort = await fetch(`/api/portfolios/client/${client.id}`);
+    if (resPort.ok) {
+      const jsonPort = await resPort.json();
+      if (jsonPort.status === 'ok' && jsonPort.data) {
+        setPortfolio(jsonPort.data);
+      }
     }
   };
 
@@ -265,8 +371,21 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
             }`}
           >
             <FileText className="w-4 h-4" />
-            Investment Policy (IPS)
+            Investment Policy
           </button>
+          {portfolio && (
+            <button
+              onClick={() => setActiveTab('portfolio')}
+              className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                activeTab === 'portfolio' 
+                  ? 'border-blue-600 text-blue-600' 
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Activity className="w-4 h-4" />
+              Portfolio
+            </button>
+          )}
         </div>
         
         {/* Content Area */}
@@ -285,6 +404,32 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
               {/* TAB: RISK PROFILE */}
               {activeTab === 'profile' && data && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  {/* Investor Financial Profile */}
+                  <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                    <h4 className="text-sm font-semibold text-slate-900 mb-4 uppercase tracking-wider flex items-center gap-2">
+                      <User className="w-4 h-4 text-slate-500" />
+                      Investor Financial Profile
+                    </h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Annual Income</p>
+                        <p className="text-sm font-bold text-slate-900">${client.annual_income?.toLocaleString() || 'Not provided'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Net Worth</p>
+                        <p className="text-sm font-bold text-slate-900">${client.net_worth?.toLocaleString() || 'Not provided'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Liquidity Needs</p>
+                        <p className="text-sm font-bold text-slate-900">${client.liquidity_needs?.toLocaleString() || 'Not provided'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tax Bracket</p>
+                        <p className="text-sm font-bold text-slate-900">{client.tax_bracket ? `${client.tax_bracket}%` : 'Not provided'}</p>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Top Stats */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
@@ -329,18 +474,34 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                     </div>
                     
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative">
-                      <div className="absolute top-3 right-3">
-                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded uppercase tracking-tighter">AI Analysis</span>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 text-slate-500 mb-2">
+                            <BrainCircuit className="w-4 h-4" />
+                            <span className="text-sm font-medium uppercase tracking-wider">Reliability Score</span>
+                          </div>
+                          <p className="text-2xl font-bold text-blue-600">
+                            {data.ai_confidence_score <= 1 
+                              ? Math.round(data.ai_confidence_score * 100) 
+                              : Math.round(data.ai_confidence_score)}/100
+                          </p>
+                        </div>
+                        <div className="group relative">
+                          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded uppercase tracking-tighter flex items-center gap-1 cursor-help">
+                            AI Analysis
+                            <Info className="w-3 h-3 text-blue-500" />
+                          </span>
+                          {/* Tooltip */}
+                          <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
+                            <p className="font-bold mb-1 text-slate-200">Data Considered for AI Analysis:</p>
+                            <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                              <li><span className="font-semibold text-white">Client Context:</span> Income, Net Worth, Tax Bracket, DOB</li>
+                              <li><span className="font-semibold text-white">Questionnaire:</span> All risk assessment responses</li>
+                            </ul>
+                            <div className="absolute -top-1 right-4 w-2 h-2 bg-slate-800 rotate-45"></div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-slate-500 mb-2">
-                        <BrainCircuit className="w-4 h-4" />
-                        <span className="text-sm font-medium uppercase tracking-wider">Reliability Score</span>
-                      </div>
-                      <p className="text-2xl font-bold text-blue-600">
-                        {data.ai_confidence_score <= 1 
-                          ? Math.round(data.ai_confidence_score * 100) 
-                          : Math.round(data.ai_confidence_score)}/100
-                      </p>
                     </div>
                   </div>
 
@@ -348,14 +509,28 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                     <div className="space-y-6">
                       {/* Summary */}
                       <div className="bg-blue-50/50 border border-blue-100 p-6 rounded-xl relative">
-                        <div className="absolute top-4 right-4">
-                          <span className="px-1.5 py-0.5 bg-blue-200 text-blue-800 text-[10px] font-bold rounded uppercase tracking-tighter">AI Analysis</span>
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                            <BrainCircuit className="w-4 h-4" />
+                            Behavioral Profile Summary
+                          </h4>
+                          <div className="group relative">
+                            <span className="px-1.5 py-0.5 bg-blue-200 text-blue-800 text-[10px] font-bold rounded uppercase tracking-tighter flex items-center gap-1 cursor-help">
+                              AI Analysis
+                              <Info className="w-3 h-3 text-blue-600" />
+                            </span>
+                            {/* Tooltip */}
+                            <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
+                              <p className="font-bold mb-1 text-slate-200">Data Considered for AI Analysis:</p>
+                              <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                                <li><span className="font-semibold text-white">Client Context:</span> Income, Net Worth, Tax Bracket, DOB</li>
+                                <li><span className="font-semibold text-white">Questionnaire:</span> All risk assessment responses</li>
+                              </ul>
+                              <div className="absolute -top-1 right-4 w-2 h-2 bg-slate-800 rotate-45"></div>
+                            </div>
+                          </div>
                         </div>
-                        <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                          <BrainCircuit className="w-4 h-4" />
-                          Behavioral Profile Summary
-                        </h4>
-                        <p className="text-blue-800 text-sm leading-relaxed pr-12">
+                        <p className="text-blue-800 text-sm leading-relaxed">
                           {data.ai_behavior_summary.split('[SUITABILITY_ANALYSIS]:')[0].split('[CONFIDENCE_BREAKDOWN]:')[0]}
                         </p>
                       </div>
@@ -368,7 +543,21 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               <Search className="w-4 h-4 text-slate-500" />
                               Inconsistency Deep-Dive
                             </h4>
-                            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-bold rounded uppercase tracking-tighter border border-slate-200">AI Analysis</span>
+                            <div className="group relative">
+                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-bold rounded uppercase tracking-tighter border border-slate-200 flex items-center gap-1 cursor-help">
+                                AI Analysis
+                                <Info className="w-3 h-3 text-slate-400" />
+                              </span>
+                              {/* Tooltip */}
+                              <div className="absolute left-0 top-full mt-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none text-left normal-case tracking-normal">
+                                <p className="font-bold mb-1 text-slate-200">Data Considered for AI Analysis:</p>
+                                <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                                  <li><span className="font-semibold text-white">Risk Category:</span> Algorithmically determined category</li>
+                                  <li><span className="font-semibold text-white">Questionnaire:</span> All risk assessment responses</li>
+                                </ul>
+                                <div className="absolute -top-1 left-4 w-2 h-2 bg-slate-800 rotate-45"></div>
+                              </div>
+                            </div>
                           </div>
                           {!analysis && !analyzing && (
                             <button 
@@ -536,13 +725,58 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
               {activeTab === 'ips' && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                   {ipsDocument ? (
-                    <IPSEditor 
-                      ips={ipsDocument} 
-                      client={client} 
-                      onSave={handleSaveIPS} 
-                      onAccept={handleAcceptIPS}
-                      viewerRole="advisor"
-                    />
+                    <div className="space-y-6">
+                      <IPSEditor 
+                        ips={ipsDocument} 
+                        client={client} 
+                        onSave={handleSaveIPS} 
+                        onAccept={handleAcceptIPS}
+                        viewerRole="advisor"
+                      />
+                      
+                      {portfolioError && (
+                        <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2">
+                          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                          <div>
+                            <h4 className="font-bold text-sm">Portfolio Construction Failed</h4>
+                            <p className="text-sm">{portfolioError}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {ipsDocument.status === 'Active' && !portfolio && (
+                        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-xl flex items-center justify-between">
+                          <div>
+                            <h4 className="text-emerald-900 font-bold">IPS is Active</h4>
+                            <p className="text-emerald-700 text-sm">You can now build the initial portfolio for this client.</p>
+                          </div>
+                          <button
+                            onClick={handleBuildPortfolio}
+                            disabled={buildingPortfolio}
+                            className="px-6 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                          >
+                            {buildingPortfolio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                            Build Portfolio
+                          </button>
+                        </div>
+                      )}
+
+                      {portfolio && (
+                        <div className="bg-blue-50 border border-blue-100 p-6 rounded-xl flex items-center justify-between">
+                          <div>
+                            <h4 className="text-blue-900 font-bold">Portfolio Built</h4>
+                            <p className="text-blue-700 text-sm">
+                              Status: <span className="font-bold">{portfolio.approval_status}</span>
+                              {portfolio.approval_status === 'Pending' ? ' (Waiting for Investor Approval)' : ''}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 text-blue-600 font-medium text-sm">
+                            <Check className="w-4 h-4" />
+                            Constructed
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
                       <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
@@ -575,6 +809,17 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* TAB: PORTFOLIO */}
+              {activeTab === 'portfolio' && portfolio && (
+                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <PortfolioEditor 
+                    portfolio={portfolio} 
+                    onSave={handleSavePortfolio}
+                    viewerRole="advisor"
+                  />
                 </div>
               )}
             </>

@@ -1,3 +1,5 @@
+export type AIModel = 'gemini-3-flash-preview' | 'gemini-3.1-pro-preview';
+
 export interface Advisor {
   id: string;
   full_name: string;
@@ -17,6 +19,7 @@ export interface Client {
   net_worth: number | null;
   liquidity_needs: number | null;
   tax_bracket: number | null;
+  investable_assets: number | null;
   risk_assessment_completed?: boolean;
   risk_assessment_finalized?: boolean;
   final_risk_category?: string;
@@ -90,7 +93,7 @@ export interface IPSDocument {
   liquidity_needs: number;
   tax_considerations: number;
   rebalancing_frequency: string;
-  status: 'Draft' | 'Finalized';
+  status: 'Draft' | 'Finalized' | 'Active';
   created_at: string;
   risk_assessments?: RiskAssessment;
   rebalancing_strategy_description?: string;
@@ -116,6 +119,40 @@ export interface TargetAllocation {
   target_percent: number;
   lower_band: number;
   upper_band: number;
+}
+
+export interface Security {
+  id: string;
+  security_name: string;
+  ticker?: string;
+  asset_class: string;
+  current_price?: number;
+}
+
+export interface Portfolio {
+  id: string;
+  client_id: string;
+  ips_id: string;
+  total_investment_amount: number;
+  status: 'Active' | 'Pending' | 'Closed';
+  client_approved: boolean;
+  client_approved_at?: string;
+  approval_status: 'Pending' | 'Approved' | 'Rejected';
+  cash_balance?: number;
+  created_at: string;
+  updated_at: string;
+  holdings?: PortfolioHolding[];
+  ips?: any;
+}
+
+export interface PortfolioHolding {
+  id: string;
+  portfolio_id: string;
+  security_id: string;
+  allocated_percent: number;
+  allocated_amount: number;
+  units: number;
+  security?: Security;
 }
 
 export type UserSession = {

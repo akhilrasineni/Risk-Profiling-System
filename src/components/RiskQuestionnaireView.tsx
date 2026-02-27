@@ -28,9 +28,14 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
       setLoading(true);
       setError(null);
       const response = await fetch(`/api/questionnaires/${TARGET_VERSION}`);
-      const data = await response.json();
       
-      if (response.ok && data.status === 'ok') {
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to load questionnaire: ${response.status} ${response.statusText}${errorText ? ` - ${errorText.slice(0, 100)}` : ''}`);
+      }
+      
+      const data = await response.json();
+      if (data.status === 'ok') {
         setQuestionnaire(data.data);
       } else {
         setError(data.message || 'Failed to load questionnaire');
@@ -186,9 +191,14 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
         body: JSON.stringify(payload)
       });
       
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Submission failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText.slice(0, 100)}` : ''}`);
+      }
+      
       const data = await response.json();
       
-      if (response.ok && data.status === 'ok') {
+      if (data.status === 'ok') {
         setSubmitSuccess(true);
       } else {
         setError(`Submission failed: ${data.message || 'Please try again'}`);

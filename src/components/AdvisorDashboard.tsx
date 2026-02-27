@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, Loader2, Users, LogOut, Briefcase, UserPlus } from 'lucide-react';
-import { Client, UserSession } from '../types';
+import { AlertCircle, Loader2, Users, LogOut, Briefcase, UserPlus, BrainCircuit, Settings, Info } from 'lucide-react';
+import { Client, UserSession, AIModel } from '../types';
 import AddClientModal from './AddClientModal';
 import RiskProfileModal from './RiskProfileModal';
+import { aiService } from '../services/aiService';
 
 export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserSession, onLogout: () => void }) {
   const [clients, setClients] = useState<Client[]>([]);
@@ -10,17 +11,30 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
   const [error, setError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewingProfileFor, setViewingProfileFor] = useState<Client | null>(null);
+  const [selectedModel, setSelectedModel] = useState<AIModel>(aiService.getModel());
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     fetchClients();
   }, [advisor.id]);
 
+  const handleModelChange = (model: AIModel) => {
+    setSelectedModel(model);
+    aiService.setModel(model);
+  };
+
   const fetchClients = async () => {
     try {
       setLoading(true);
       const res = await fetch(`/api/advisors/${advisor.id}/clients`);
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Failed to fetch clients: ${res.status} ${res.statusText}${errorText ? ` - ${errorText.slice(0, 100)}` : ''}`);
+      }
+      
       const data = await res.json();
-      if (res.ok && data.status === 'ok') {
+      if (data.status === 'ok') {
         setClients(data.data);
       } else {
         setError(data.message || 'Failed to fetch clients');
@@ -44,6 +58,17 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
             <h1 className="font-semibold text-slate-900">Advisor Portal</h1>
           </div>
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg border border-slate-200">
+              <BrainCircuit className="w-4 h-4 text-blue-600" />
+              <select 
+                value={selectedModel}
+                onChange={(e) => handleModelChange(e.target.value as AIModel)}
+                className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+                <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
+              </select>
+            </div>
             <span className="text-sm text-slate-500 font-medium">Welcome, {advisor.name}</span>
             <button onClick={onLogout} className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors" title="Sign Out">
               <LogOut className="w-4 h-4" />
@@ -113,10 +138,9 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
                         {client.risk_assessment_completed ? (
                           <button 
                             onClick={() => setViewingProfileFor(client)}
-                            className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors group"
+                            className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
                           >
                             View Profile
-                            <span className="px-1 py-0.5 bg-blue-200 text-blue-800 text-[9px] font-bold rounded uppercase tracking-tighter group-hover:bg-blue-300 transition-colors">AI</span>
                           </button>
                         ) : (
                           <span className="text-sm text-slate-400 italic">Pending</span>
