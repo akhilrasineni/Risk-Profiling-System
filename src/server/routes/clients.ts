@@ -84,4 +84,27 @@ router.get("/:id/risk_assessment", async (req, res) => {
   }
 });
 
+// Delete a client and all associated data
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // We rely on ON DELETE CASCADE if configured in DB, 
+    // but let's be explicit for safety if needed.
+    // In many Supabase setups, CASCADE is the default for foreign keys.
+    
+    const { error } = await supabase
+      .from('clients')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    res.json({ status: "ok", message: "Client and all associated data deleted successfully." });
+  } catch (error: any) {
+    console.error("Error deleting client:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 export default router;

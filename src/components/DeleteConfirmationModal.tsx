@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, DollarSign, SlidersHorizontal, AlertTriangle } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface DeleteConfirmationModalProps {
   holdingName: string;
@@ -10,8 +11,21 @@ interface DeleteConfirmationModalProps {
 
 export default function DeleteConfirmationModal({ holdingName, onClose, onSell, onRebalance }: DeleteConfirmationModalProps) {
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" 
+      onClick={onClose}
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        transition={{ type: "spring", duration: 0.5 }}
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden" 
+        onClick={e => e.stopPropagation()}
+      >
         <div className="p-6 text-center">
           <div className="mx-auto bg-amber-100 w-12 h-12 rounded-full flex items-center justify-center mb-4">
             <AlertTriangle className="w-6 h-6 text-amber-600" />
@@ -25,7 +39,7 @@ export default function DeleteConfirmationModal({ holdingName, onClose, onSell, 
         <div className="p-6 space-y-3">
             <button 
               onClick={onSell}
-              className='w-full flex items-center gap-3 text-left p-4 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors'
+              className='w-full flex items-center gap-3 text-left p-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 transition-colors'
             >
                 <DollarSign className='w-5 h-5 text-slate-500' />
                 <div>
@@ -35,7 +49,7 @@ export default function DeleteConfirmationModal({ holdingName, onClose, onSell, 
             </button>
             <button 
               onClick={onRebalance}
-              className='w-full flex items-center gap-3 text-left p-4 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors'
+              className='w-full flex items-center gap-3 text-left p-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 transition-colors'
             >
                 <SlidersHorizontal className='w-5 h-5 text-slate-500' />
                 <div>
@@ -45,12 +59,12 @@ export default function DeleteConfirmationModal({ holdingName, onClose, onSell, 
             </button>
         </div>
 
-        <div className="p-4 bg-slate-50/70 border-t border-slate-100 flex justify-end">
+        <div className="p-4 bg-white border-t border-slate-100 flex justify-end">
           <button onClick={onClose} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors text-sm">
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

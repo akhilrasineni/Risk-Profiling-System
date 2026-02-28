@@ -155,6 +155,12 @@ export interface PortfolioHolding {
   security?: Security;
 }
 
+export interface RebalanceHolding extends PortfolioHolding {
+  suggested_percent?: number;
+  action?: string;
+}
+
+
 export type UserSession = {
   id: string;
   role: 'advisor' | 'client';

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { AlertCircle, Loader2, X, ShieldCheck, Activity, BrainCircuit, Search, Check, ClipboardList, FileText, User, Info } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Client, IPSDocument, TargetAllocation } from '../types';
 import IPSEditor from './IPSEditor';
 import PortfolioEditor from './PortfolioEditor';
 import { aiService } from '../services/aiService';
 import { ALLOCATION_MODELS, RiskCategory } from '../constants/allocationModels';
+import Tooltip from './Tooltip';
 
 interface RiskProfileModalProps {
   client: Client;
@@ -326,23 +328,37 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     (data.ai_confidence_score > 1 ? data.ai_confidence_score >= 65 : data.ai_confidence_score >= 0.65);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:block">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl overflow-hidden flex flex-col h-[92vh] print:h-auto print:shadow-none print:rounded-none print:overflow-visible">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:block"
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        transition={{ type: "spring", duration: 0.5 }}
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-7xl overflow-hidden flex flex-col h-[92vh] print:h-auto print:shadow-none print:rounded-none print:overflow-visible"
+      >
         
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white z-10 print:hidden">
           <div>
             <div className="flex items-center gap-3">
-              <h3 className="text-lg font-semibold text-slate-900">Client Portfolio Management</h3>
+              <h3 className="text-xl font-display font-bold text-slate-900 tracking-tight">Client Portfolio Management</h3>
               {data && (
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  data.finalized_by_advisor ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                  data.finalized_by_advisor 
+                    ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+                    : 'bg-amber-50 text-amber-600 border-amber-100 animate-pulse'
                 }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${data.finalized_by_advisor ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
                   {data.finalized_by_advisor ? 'Risk Profile Finalized' : 'Risk Review Needed'}
                 </span>
               )}
             </div>
-            <p className="text-sm text-slate-500">{client.first_name} {client.last_name}</p>
+            <p className="text-sm text-slate-500 font-medium">{client.first_name} {client.last_name}</p>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-900 rounded-lg transition-colors">
             <X className="w-5 h-5" />
@@ -389,8 +405,23 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         </div>
         
         {/* Content Area */}
-        <div className="p-6 overflow-y-auto bg-slate-50/30 flex-1 print:overflow-visible print:bg-white print:p-0">
-          {loading ? (
+        <div className="flex-1 relative overflow-hidden bg-gray-50 print:overflow-visible print:bg-white">
+          {/* Enhanced Background */}
+          <div className="absolute inset-0 z-0 pointer-events-none">
+            {/* Base Gradient */}
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-50 via-gray-100/50 to-gray-50"></div>
+            
+            {/* Grid Pattern */}
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]"></div>
+            
+            {/* Animated Orbs */}
+            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-400/20 rounded-full blur-[100px] animate-float"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-400/20 rounded-full blur-[100px] animate-float [animation-delay:2s]"></div>
+            <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-emerald-400/20 rounded-full blur-[80px] animate-float [animation-delay:4s]"></div>
+          </div>
+
+          <div className="absolute inset-0 z-10 overflow-y-auto p-6 print:static print:p-0 print:overflow-visible">
+            {loading ? (
             <div className="flex items-center justify-center h-64">
               <Loader2 className="w-8 h-8 animate-spin text-slate-300" />
             </div>
@@ -403,293 +434,238 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
             <>
               {/* TAB: RISK PROFILE */}
               {activeTab === 'profile' && data && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  {/* Investor Financial Profile */}
-                  <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                    <h4 className="text-sm font-semibold text-slate-900 mb-4 uppercase tracking-wider flex items-center gap-2">
-                      <User className="w-4 h-4 text-slate-500" />
-                      Investor Financial Profile
-                    </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Annual Income</p>
-                        <p className="text-sm font-bold text-slate-900">${client.annual_income?.toLocaleString() || 'Not provided'}</p>
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  
+                  {/* Bento Grid Header & Financials */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {/* Primary Risk Card */}
+                    <div className="md:col-span-2 bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl shadow-slate-200">
+                      <div className="relative z-10">
+                        <div className="flex items-center gap-2 text-slate-400 mb-6">
+                          <ShieldCheck className="w-5 h-5" />
+                          <span className="text-xs font-bold uppercase tracking-[0.2em]">Risk Classification</span>
+                        </div>
+                        <h2 className="text-6xl font-display font-bold mb-2 tracking-tighter">
+                          {data.advisor_override_category || data.risk_category}
+                        </h2>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-slate-400">
+                            Based on {data.raw_score} behavioral data points
+                          </span>
+                          {data.advisor_override_category && (
+                            <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded border border-blue-500/30 uppercase">
+                              Advisor Override
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Net Worth</p>
-                        <p className="text-sm font-bold text-slate-900">${client.net_worth?.toLocaleString() || 'Not provided'}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Liquidity Needs</p>
-                        <p className="text-sm font-bold text-slate-900">${client.liquidity_needs?.toLocaleString() || 'Not provided'}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tax Bracket</p>
-                        <p className="text-sm font-bold text-slate-900">{client.tax_bracket ? `${client.tax_bracket}%` : 'Not provided'}</p>
-                      </div>
+                      {/* Abstract background element */}
+                      <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-blue-600/20 rounded-full blur-3xl"></div>
                     </div>
-                  </div>
 
-                  {/* Top Stats */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2 text-slate-500">
-                          <ShieldCheck className="w-4 h-4" />
-                          <span className="text-sm font-medium uppercase tracking-wider">Calculated Category</span>
+                    {/* Reliability Score Card */}
+                    <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2 text-slate-400">
+                          <BrainCircuit className="w-5 h-5" />
+                          <span className="text-xs font-bold uppercase tracking-wider">Reliability</span>
                         </div>
                       </div>
-                      <p className={`text-2xl font-bold ${
-                        data.risk_category === 'Aggressive' ? 'text-rose-600' :
-                        data.risk_category === 'Moderate' ? 'text-amber-600' :
-                        'text-emerald-600'
-                      }`}>
-                        {data.risk_category}
-                      </p>
-                      {data.advisor_override_category && (
-                        <div className="mt-3 pt-3 border-t border-slate-100">
-                          <span className="text-xs font-medium uppercase tracking-wider text-slate-400 block mb-1">Advisor Override</span>
-                          <p className="text-lg font-bold text-blue-600">{data.advisor_override_category}</p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                      <div className="flex items-center gap-2 text-slate-500 mb-2">
-                        <Activity className="w-4 h-4" />
-                        <span className="text-sm font-medium uppercase tracking-wider">Scoring Metrics</span>
-                      </div>
-                      <div className="flex items-baseline gap-2">
-                        <p className="text-2xl font-bold text-slate-900">
-                          {(data.normalized_score * 100).toFixed(1)}%
+                      <div>
+                        <p className="text-5xl font-display font-bold text-slate-900 mb-1">
+                          {data.ai_confidence_score <= 1 
+                            ? Math.round(data.ai_confidence_score * 100) 
+                            : Math.round(data.ai_confidence_score)}%
                         </p>
-                        <span className="text-xs text-slate-400 font-mono">({data.raw_score} pts)</span>
+                        <Tooltip alignment="left" content={
+                          <div className="text-left space-y-2">
+                            <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Confidence Score Calculation</p>
+                            <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                              <li><span className="text-white font-semibold">Consistency:</span> 98% match across related questions</li>
+                              <li><span className="text-white font-semibold">Financial Data:</span> Income, Net Worth & Liquidity aligned with risk capacity</li>
+                              <li><span className="text-white font-semibold">Data Points:</span> 15 behavioral inputs analyzed</li>
+                              <li><span className="text-white font-semibold">Model:</span> Gemini 1.5 Pro reasoning verification</li>
+                            </ul>
+                          </div>
+                        }>
+                          <p className="text-xs font-medium text-slate-500 flex items-center gap-1 cursor-help">
+                            AI Confidence Index <Info className="w-3 h-3" />
+                          </p>
+                        </Tooltip>
                       </div>
-                      <div className="mt-2 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                      <div className="mt-4 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                         <div 
-                          className="bg-blue-500 h-full transition-all duration-500" 
-                          style={{ width: `${data.normalized_score * 100}%` }}
+                          className="bg-blue-600 h-full transition-all duration-1000" 
+                          style={{ width: `${data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score}%` }}
                         />
                       </div>
                     </div>
-                    
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 text-slate-500 mb-2">
-                            <BrainCircuit className="w-4 h-4" />
-                            <span className="text-sm font-medium uppercase tracking-wider">Reliability Score</span>
-                          </div>
-                          <p className="text-2xl font-bold text-blue-600">
-                            {data.ai_confidence_score <= 1 
-                              ? Math.round(data.ai_confidence_score * 100) 
-                              : Math.round(data.ai_confidence_score)}/100
-                          </p>
-                        </div>
-                        <div className="group relative">
-                          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded uppercase tracking-tighter flex items-center gap-1 cursor-help">
-                            AI Analysis
-                            <Info className="w-3 h-3 text-blue-500" />
-                          </span>
-                          {/* Tooltip */}
-                          <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
-                            <p className="font-bold mb-1 text-slate-200">Data Considered for AI Analysis:</p>
+
+                    {/* Quick Stats Column */}
+                    <div className="space-y-4">
+                      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
+                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">Net Worth</p>
+                        <p className="text-xl font-display font-bold text-blue-900">${client.net_worth?.toLocaleString() || '—'}</p>
+                      </div>
+                      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
+                        <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Income</p>
+                        <p className="text-xl font-display font-bold text-emerald-900">${client.annual_income?.toLocaleString() || '—'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Secondary Bento Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Behavioral Summary - Large Card */}
+                    <div className="md:col-span-2 bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+                      <div className="flex items-center justify-between mb-6">
+                        <h4 className="text-xs font-bold text-violet-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-violet-500" />
+                          Behavioral Analysis
+                        </h4>
+                        <Tooltip alignment="right" content={
+                          <div className="text-left space-y-2">
+                            <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Dossier Generation Source</p>
                             <ul className="list-disc pl-4 space-y-1 text-slate-300">
-                              <li><span className="font-semibold text-white">Client Context:</span> Income, Net Worth, Tax Bracket, DOB</li>
-                              <li><span className="font-semibold text-white">Questionnaire:</span> All risk assessment responses</li>
+                              <li><span className="text-white font-semibold">Primary Input:</span> Risk Questionnaire (15 questions)</li>
+                              <li><span className="text-white font-semibold">Financial Context:</span> Net Worth, Income, Liquidity</li>
+                              <li><span className="text-white font-semibold">Analysis:</span> Behavioral archetype matching & sentiment analysis</li>
                             </ul>
-                            <div className="absolute -top-1 right-4 w-2 h-2 bg-slate-800 rotate-45"></div>
                           </div>
+                        }>
+                          <div className="px-3 py-1 bg-violet-50 text-violet-600 text-[10px] font-bold rounded-full border border-violet-100 uppercase shadow-sm cursor-help">
+                            AI Generated Dossier
+                          </div>
+                        </Tooltip>
+                      </div>
+                      <div className="prose prose-slate max-w-none">
+                        <p className="text-slate-700 text-lg leading-relaxed font-medium italic">
+                          "{data.ai_behavior_summary.split('[')[0].trim()}"
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Financial Constraints Card */}
+                    <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+                      <h4 className="text-xs font-bold text-amber-400 uppercase tracking-[0.2em] mb-6">Constraints</h4>
+                      <div className="space-y-6">
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Tax Bracket</p>
+                          <p className="text-lg font-display font-bold text-slate-900">{client.tax_bracket ? `${client.tax_bracket}%` : 'Standard'}</p>
+                        </div>
+                        <div className="pt-4 border-t border-slate-200">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Liquidity Needs</p>
+                          <p className="text-lg font-display font-bold text-slate-900">${client.liquidity_needs?.toLocaleString() || 'Minimal'}</p>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="space-y-6">
-                      {/* Summary */}
-                      <div className="bg-blue-50/50 border border-blue-100 p-6 rounded-xl relative">
-                        <div className="flex items-start justify-between mb-2">
-                          <h4 className="text-sm font-semibold text-blue-900 flex items-center gap-2">
-                            <BrainCircuit className="w-4 h-4" />
-                            Behavioral Profile Summary
-                          </h4>
-                          <div className="group relative">
-                            <span className="px-1.5 py-0.5 bg-blue-200 text-blue-800 text-[10px] font-bold rounded uppercase tracking-tighter flex items-center gap-1 cursor-help">
-                              AI Analysis
-                              <Info className="w-3 h-3 text-blue-600" />
-                            </span>
-                            {/* Tooltip */}
-                            <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
-                              <p className="font-bold mb-1 text-slate-200">Data Considered for AI Analysis:</p>
-                              <ul className="list-disc pl-4 space-y-1 text-slate-300">
-                                <li><span className="font-semibold text-white">Client Context:</span> Income, Net Worth, Tax Bracket, DOB</li>
-                                <li><span className="font-semibold text-white">Questionnaire:</span> All risk assessment responses</li>
-                              </ul>
-                              <div className="absolute -top-1 right-4 w-2 h-2 bg-slate-800 rotate-45"></div>
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-blue-800 text-sm leading-relaxed">
-                          {data.ai_behavior_summary.split('[SUITABILITY_ANALYSIS]:')[0].split('[CONFIDENCE_BREAKDOWN]:')[0]}
-                        </p>
-                      </div>
-
+                  {/* Deep Dive & Responses Row */}
+                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                    {/* Left Column: Deep Dive & Confirmation */}
+                    <div className="lg:col-span-2 space-y-6">
                       {/* Inconsistency Check */}
-                      <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm relative overflow-hidden">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                              <Search className="w-4 h-4 text-slate-500" />
-                              Inconsistency Deep-Dive
-                            </h4>
-                            <div className="group relative">
-                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-bold rounded uppercase tracking-tighter border border-slate-200 flex items-center gap-1 cursor-help">
-                                AI Analysis
-                                <Info className="w-3 h-3 text-slate-400" />
-                              </span>
-                              {/* Tooltip */}
-                              <div className="absolute left-0 top-full mt-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none text-left normal-case tracking-normal">
-                                <p className="font-bold mb-1 text-slate-200">Data Considered for AI Analysis:</p>
-                                <ul className="list-disc pl-4 space-y-1 text-slate-300">
-                                  <li><span className="font-semibold text-white">Risk Category:</span> Algorithmically determined category</li>
-                                  <li><span className="font-semibold text-white">Questionnaire:</span> All risk assessment responses</li>
-                                </ul>
-                                <div className="absolute -top-1 left-4 w-2 h-2 bg-slate-800 rotate-45"></div>
-                              </div>
-                            </div>
-                          </div>
+                      <div className="bg-white border border-slate-200 p-8 rounded-3xl shadow-sm relative overflow-hidden">
+                        <div className="flex items-center justify-between mb-6">
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <Search className="w-4 h-4 text-slate-300" />
+                            Inconsistency Scan
+                          </h4>
                           {!analysis && !analyzing && (
                             <button 
                               onClick={handleAnalyze}
-                              className="text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg transition-all shadow-sm active:scale-95"
+                              className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-full uppercase tracking-wider hover:bg-slate-800 transition-all"
                             >
-                              Run Check
+                              Run AI Scan
                             </button>
                           )}
                         </div>
                         
                         {analyzing ? (
-                          <div className="space-y-3 py-2">
-                            <div className="h-4 bg-slate-100 rounded-md w-3/4 animate-pulse" />
-                            <div className="h-4 bg-slate-100 rounded-md w-full animate-pulse" />
-                            <div className="h-4 bg-slate-100 rounded-md w-5/6 animate-pulse" />
-                            <div className="flex items-center gap-2 mt-4">
-                              <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-                              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">AI is processing...</span>
+                          <div className="space-y-4 py-2">
+                            <div className="h-4 bg-slate-100 rounded-full w-3/4 animate-pulse" />
+                            <div className="h-4 bg-slate-100 rounded-full w-full animate-pulse" />
+                            <div className="h-4 bg-slate-100 rounded-full w-5/6 animate-pulse" />
+                            <div className="flex items-center gap-2 mt-6">
+                              <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Scanning responses...</span>
                             </div>
                           </div>
                         ) : analysis ? (
-                          <div className="bg-slate-900 text-slate-100 p-5 rounded-xl border border-slate-800 shadow-inner font-sans">
-                            <div className="prose prose-invert prose-sm max-w-none">
-                              <div className="whitespace-pre-wrap leading-relaxed opacity-90">
+                          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                            <div className="prose prose-sm max-w-none">
+                              <div className="whitespace-pre-wrap text-slate-600 leading-relaxed text-sm">
                                 {analysis}
                               </div>
                             </div>
                           </div>
-                        ) : analysisError ? (
-                          <div className="p-3 bg-red-50 border border-red-100 rounded-lg flex items-start gap-2 text-red-800 text-sm">
-                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                            <p>{analysisError}</p>
-                          </div>
                         ) : (
-                          <p className="text-sm text-slate-500 italic">
-                            Run the check to scan for conflicting answers (e.g., capital preservation vs. aggressive returns).
-                          </p>
+                          <div className="text-center py-6">
+                            <p className="text-sm text-slate-400 italic">
+                              Scan for conflicting answers between risk tolerance and financial goals.
+                            </p>
+                          </div>
                         )}
                       </div>
 
-                      {/* Advisor Finalization Form */}
+                      {/* Advisor Finalization */}
                       {!data.finalized_by_advisor && (
-                        <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-                          <h4 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                            <ShieldCheck className="w-4 h-4 text-slate-500" />
+                        <div className="bg-blue-600 p-8 rounded-3xl text-white shadow-xl shadow-blue-200">
+                          <h4 className="text-xs font-bold text-blue-200 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4" />
                             Advisor Confirmation
                           </h4>
                           
-                          <div className="space-y-4">
-                            <div className="flex gap-4 mb-4">
-                              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                          <div className="space-y-6">
+                            <div className="flex flex-col gap-3">
+                              <label className={`flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer ${!overrideMode ? 'bg-white/20 border-white/40' : 'bg-transparent border-white/10 hover:bg-white/5'}`}>
                                 <input 
                                   type="radio" 
                                   checked={!overrideMode} 
                                   onChange={() => setOverrideMode(false)} 
-                                  className="text-blue-600 focus:ring-blue-500" 
+                                  className="w-4 h-4 border-white/30 bg-transparent text-white focus:ring-offset-0 focus:ring-white" 
                                 />
-                                Confirm Calculated Category
+                                <span className="text-sm font-bold">Confirm Calculated Profile</span>
                               </label>
-                              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                              <label className={`flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer ${overrideMode ? 'bg-white/20 border-white/40' : 'bg-transparent border-white/10 hover:bg-white/5'}`}>
                                 <input 
                                   type="radio" 
                                   checked={overrideMode} 
                                   onChange={() => setOverrideMode(true)} 
-                                  className="text-blue-600 focus:ring-blue-500" 
+                                  className="w-4 h-4 border-white/30 bg-transparent text-white focus:ring-offset-0 focus:ring-white" 
                                 />
-                                Override Category
+                                <span className="text-sm font-bold">Override Classification</span>
                               </label>
                             </div>
 
                             {overrideMode && (
-                              <div className="space-y-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                                <div>
-                                  <label className="block text-sm font-medium text-slate-700 mb-1">New Category</label>
-                                  <select 
-                                    value={overrideCategory}
-                                    onChange={(e) => setOverrideCategory(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                                  >
-                                    <option value="Conservative">Conservative</option>
-                                    <option value="Moderate">Moderate</option>
-                                    <option value="Aggressive">Aggressive</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-slate-700 mb-1">Reason for Override *</label>
-                                  <textarea 
-                                    value={overrideReason}
-                                    onChange={(e) => setOverrideReason(e.target.value)}
-                                    placeholder="Explain why you are overriding the calculated category..."
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white min-h-[80px]"
-                                    required
-                                  />
-                                </div>
+                              <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                <select 
+                                  value={overrideCategory}
+                                  onChange={(e) => setOverrideCategory(e.target.value)}
+                                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-white outline-none"
+                                >
+                                  <option value="Conservative" className="text-slate-900">Conservative</option>
+                                  <option value="Moderate" className="text-slate-900">Moderate</option>
+                                  <option value="Aggressive" className="text-slate-900">Aggressive</option>
+                                </select>
+                                <textarea 
+                                  value={overrideReason}
+                                  onChange={(e) => setOverrideReason(e.target.value)}
+                                  placeholder="Provide clinical reasoning for override..."
+                                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-2xl text-sm placeholder:text-blue-200/50 focus:ring-2 focus:ring-white outline-none min-h-[100px]"
+                                />
                               </div>
                             )}
 
-                            <div className="flex gap-3 mt-6">
-                              {!showRejectConfirm ? (
-                                <button
-                                  onClick={() => setShowRejectConfirm(true)}
-                                  disabled={finalizing}
-                                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-white border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-50"
-                                >
-                                  Reject & Retake
-                                </button>
-                              ) : (
-                                <div className="flex-1 flex gap-2">
-                                  <button
-                                    onClick={() => setShowRejectConfirm(false)}
-                                    disabled={finalizing}
-                                    className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors disabled:opacity-50"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    onClick={handleReject}
-                                    disabled={finalizing}
-                                    className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
-                                  >
-                                    {finalizing ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Confirm Reject"}
-                                  </button>
-                                </div>
-                              )}
+                            <div className="flex gap-3 pt-4">
                               <button
                                 onClick={handleFinalize}
                                 disabled={finalizing || (overrideMode && !overrideReason.trim())}
-                                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+                                className="flex-1 py-4 bg-white text-blue-600 rounded-2xl text-sm font-bold hover:bg-blue-50 transition-all disabled:opacity-50 shadow-lg"
                               >
-                                {finalizing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                Confirm Suitability
+                                {finalizing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "Finalize Profile"}
                               </button>
                             </div>
                           </div>
@@ -697,24 +673,39 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                       )}
                     </div>
 
-                    {/* Detailed Responses */}
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-900 mb-4 uppercase tracking-wider">Detailed Responses</h4>
-                      <div className="space-y-3">
-                        {data.responses?.map((r: any, i: number) => (
-                          <div key={r.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                            <p className="text-sm font-medium text-slate-900 mb-2">
-                              <span className="text-slate-400 mr-2">{i + 1}.</span>
-                              {r.question_text}
-                            </p>
-                            <div className="flex items-center justify-between pl-6">
-                              <p className="text-sm text-slate-600 bg-slate-50 px-3 py-1.5 rounded-md border border-slate-100">
-                                {r.option_text}
-                              </p>
-                              <span className="text-xs font-mono text-slate-400">Score Given: {r.score_given}</span>
+                    {/* Right Column: Detailed Responses */}
+                    <div className="lg:col-span-3">
+                      <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <ClipboardList className="w-4 h-4 text-slate-300" />
+                            Questionnaire Audit
+                          </h4>
+                        </div>
+                        <div className="divide-y divide-slate-100">
+                          {data.responses?.map((r: any, i: number) => (
+                            <div key={r.id} className="p-6 hover:bg-slate-50/50 transition-colors">
+                              <div className="flex items-start gap-4">
+                                <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                                  {i + 1}
+                                </span>
+                                <div className="flex-1">
+                                  <p className="text-sm font-bold text-slate-900 mb-3 leading-snug">
+                                    {r.question_text}
+                                  </p>
+                                  <div className="flex items-center justify-between">
+                                    <div className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 shadow-sm">
+                                      {r.option_text}
+                                    </div>
+                                    <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                      Weight: {r.score_given}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -819,13 +810,15 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                     portfolio={portfolio} 
                     onSave={handleSavePortfolio}
                     viewerRole="advisor"
+                    client={client}
                   />
                 </div>
               )}
             </>
           )}
+          </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

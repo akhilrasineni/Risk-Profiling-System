@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Loader2, AlertCircle, Check, SlidersHorizontal, Wallet } from 'lucide-react';
+import { Plus, Trash2, Save, Loader2, AlertCircle, Check, SlidersHorizontal, Wallet, Sparkles } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
 import RebalanceModal from './RebalanceModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
+import Tooltip from './Tooltip';
 
 interface Security {
   id: string;
@@ -20,13 +22,16 @@ interface Holding {
   security?: Security;
 }
 
+import { Client } from '../types';
+
 interface PortfolioEditorProps {
   portfolio: any;
   onSave: () => void;
   viewerRole: 'advisor' | 'client';
+  client?: Client;
 }
 
-export default function PortfolioEditor({ portfolio, onSave, viewerRole }: PortfolioEditorProps) {
+export default function PortfolioEditor({ portfolio, onSave, viewerRole, client }: PortfolioEditorProps) {
   const [holdings, setHoldings] = useState<Holding[]>(portfolio.holdings || []);
   const [securities, setSecurities] = useState<Security[]>([]);
   const [saving, setSaving] = useState(false);
@@ -173,8 +178,25 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole }: Portf
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">Portfolio Construction</h3>
-          <p className="text-sm text-slate-500">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-bold text-slate-900">Portfolio Construction</h3>
+            <Tooltip alignment="left" position="bottom" content={
+              <div className="text-left space-y-2">
+                <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Portfolio Construction Logic</p>
+                <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                  <li><span className="text-white font-semibold">Risk Profile:</span> {portfolio.ips?.risk_category || 'Balanced'} (Score: {portfolio.ips?.risk_score || 'N/A'})</li>
+                  <li><span className="text-white font-semibold">Constraints:</span> Tax Bracket {client?.tax_bracket || portfolio.client?.tax_bracket || '24'}%, Liquidity ${client?.liquidity_needs?.toLocaleString() || portfolio.client?.liquidity_needs?.toLocaleString() || '50,000'}</li>
+                  <li><span className="text-white font-semibold">Optimization:</span> Mean-variance efficiency vs. benchmark</li>
+                </ul>
+              </div>
+            }>
+              <div className="px-2 py-0.5 bg-violet-50 text-violet-600 text-[10px] font-bold rounded-full border border-violet-100 uppercase shadow-sm flex items-center gap-1 cursor-help">
+                <Sparkles className="w-3 h-3" />
+                AI Generated
+              </div>
+            </Tooltip>
+          </div>
+          <p className="text-sm text-slate-500 mt-1">
             Status: <span className="font-semibold text-blue-600">
               {portfolio.approval_status === 'Pending' ? 'Portfolio Drafted' : 'Holdings'}
             </span>
@@ -182,7 +204,7 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole }: Portf
         </div>
         
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+          <div className="flex items-center gap-3 px-4 py-2 bg-white border border-slate-200 rounded-xl">
             <Wallet className="w-5 h-5 text-slate-500" />
             <div className="flex flex-col">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Available Cash</span>
@@ -203,13 +225,15 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole }: Portf
                 </button>
               )}
 
-              <button
-                onClick={() => setShowRebalanceModal(true)}
-                className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-2"
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-                Rebalance
-              </button>
+              {isHolding && (
+                <button
+                  onClick={() => setShowRebalanceModal(true)}
+                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-2"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  Rebalance
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -231,10 +255,10 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole }: Portf
 
       <div className="flex flex-col gap-3">
         {holdings.map((holding, index) => (
-          <div key={index} className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300 flex flex-col md:flex-row items-start md:items-center p-4 gap-4 md:gap-6">
+          <div key={index} className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 flex flex-col md:flex-row items-start md:items-center p-4 gap-4 md:gap-6 group">
             
             <div className="flex-1 min-w-0 w-full md:w-auto border-b md:border-b-0 border-slate-100 pb-4 md:pb-0">
-              {isAdvisor ? (
+              {isAdvisor && !isHolding ? (
                 <select
                   value={holding.security_id}
                   onChange={(e) => handleUpdateHolding(index, { security_id: e.target.value })}
@@ -257,7 +281,7 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole }: Portf
               <div className='flex md:flex-col justify-between md:justify-start items-center md:items-start w-full md:w-auto'>
                 <p className="md:hidden text-xs text-slate-400 uppercase font-bold">Allocation</p>
                 <p className="hidden md:block text-xs text-slate-400 uppercase font-bold mb-1">Allocation</p>
-                {isAdvisor ? (
+                {isAdvisor && portfolio.approval_status === 'Pending' ? (
                   <div className="flex items-center gap-1">
                     <input
                       type="number"
@@ -276,7 +300,7 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole }: Portf
               <div className='flex md:flex-col justify-between md:justify-start items-center md:items-start w-full md:w-auto'>
                 <p className="md:hidden text-xs text-slate-400 uppercase font-bold">Market Value</p>
                 <p className="hidden md:block text-xs text-slate-400 uppercase font-bold mb-1">Market Value</p>
-                {isAdvisor ? (
+                {isAdvisor && portfolio.approval_status === 'Pending' ? (
                   <div className="flex items-center gap-1">
                     <span className="text-sm font-bold text-slate-500">$</span>
                     <input
@@ -317,7 +341,7 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole }: Portf
       </div>
 
       {/* Bottom Summary */}
-      <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl mt-4">
+      <div className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl mt-4">
         <span className="font-bold text-slate-700">Total Allocation</span>
         <span className={`font-mono font-bold text-lg ${totalPercent > 100.01 ? 'text-red-600' : totalPercent < 99.99 ? 'text-amber-600' : 'text-emerald-600'}`}>
           {totalPercent.toFixed(2)}%
@@ -327,7 +351,7 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole }: Portf
       {isAdvisor && (
         <button
           onClick={handleAddHolding}
-          className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-all flex items-center justify-center gap-2 text-sm font-medium"
+          className="w-full py-3 border-2 border-dashed border-blue-200 rounded-xl text-blue-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50/50 transition-all flex items-center justify-center gap-2 text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
           Add Security Holding
@@ -341,34 +365,38 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole }: Portf
         </div>
       )}
 
-      {showRebalanceModal && (
-        <RebalanceModal 
-          portfolio={{...portfolio, cash_balance: walletAmount}}
-          securities={securities}
-          onClose={() => setShowRebalanceModal(false)}
-          onSave={async (updatedHoldings, updatedCashBalance) => {
-            setHoldings(updatedHoldings);
-            setWalletAmount(updatedCashBalance);
-            await handleSave(updatedHoldings, updatedCashBalance);
-            setShowRebalanceModal(false);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {showRebalanceModal && (
+          <RebalanceModal 
+            portfolio={{...portfolio, cash_balance: walletAmount}}
+            securities={securities}
+            onClose={() => setShowRebalanceModal(false)}
+            onSave={async (updatedHoldings, updatedCashBalance) => {
+              setHoldings(updatedHoldings);
+              setWalletAmount(updatedCashBalance);
+              await handleSave(updatedHoldings, updatedCashBalance);
+              setShowRebalanceModal(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
 
-      {holdingToDelete !== null && (
-        <DeleteConfirmationModal 
-          holdingName={holdings[holdingToDelete]?.security?.security_name || 'this security'}
-          onClose={() => setHoldingToDelete(null)}
-          onSell={() => {
-            handleSellAndRemove(holdingToDelete);
-            setHoldingToDelete(null);
-          }}
-          onRebalance={() => {
-            handleRebalanceRemove(holdingToDelete);
-            setHoldingToDelete(null);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {holdingToDelete !== null && (
+          <DeleteConfirmationModal 
+            holdingName={holdings[holdingToDelete]?.security?.security_name || 'this security'}
+            onClose={() => setHoldingToDelete(null)}
+            onSell={() => {
+              handleSellAndRemove(holdingToDelete);
+              setHoldingToDelete(null);
+            }}
+            onRebalance={() => {
+              handleRebalanceRemove(holdingToDelete);
+              setHoldingToDelete(null);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

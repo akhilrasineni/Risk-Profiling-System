@@ -228,7 +228,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
         <div id="ips-document" className="bg-white shadow-lg rounded-xl border border-slate-200 overflow-hidden max-w-5xl mx-auto print:shadow-none print:border-none print:max-w-none print:m-0 print:rounded-none">
           
           {/* Header Section */}
-          <div className="bg-slate-50 border-b border-slate-200 p-10">
+          <div className="bg-white border-b border-slate-200 p-10">
             <div className="flex justify-between items-start mb-10">
               <div>
                 <h1 className="text-3xl font-serif font-bold text-slate-900 mb-2">Investment Policy Statement</h1>
@@ -324,7 +324,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                 </p>
 
                 <p>
-                  {formData.goals_description || (ips.risk_assessments?.ai_behavior_summary ? ips.risk_assessments.ai_behavior_summary.split('[SUITABILITY_ANALYSIS]:')[0].split('[CONFIDENCE_BREAKDOWN]:')[0].trim() : "The investment strategy is designed to align with the client's long-term financial objectives.")}
+                  {formData.goals_description || (ips.risk_assessments?.ai_behavior_summary ? ips.risk_assessments.ai_behavior_summary.split('[')[0].trim() : "The investment strategy is designed to align with the client's long-term financial objectives.")}
                 </p>
               </div>
             </section>
@@ -339,14 +339,14 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                   {formData.constraints_description || "The portfolio is managed with consideration for the client's specific liquidity needs, tax situation, and any unique circumstances or restrictions."}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-start gap-3 p-3 bg-slate-50 rounded border border-slate-100">
+                  <div className="flex items-start gap-3 p-3 bg-white rounded border border-slate-100">
                     <Scale className="w-4 h-4 text-slate-400 mt-0.5" />
                     <div>
                       <h4 className="text-xs font-bold text-slate-700 uppercase">Tax Considerations</h4>
                       <p className="text-sm text-slate-600">Managed for a {formData.tax_considerations}% marginal tax bracket.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-3 p-3 bg-slate-50 rounded border border-slate-100">
+                  <div className="flex items-start gap-3 p-3 bg-white rounded border border-slate-100">
                     <ShieldCheck className="w-4 h-4 text-slate-400 mt-0.5" />
                     <div>
                       <h4 className="text-xs font-bold text-slate-700 uppercase">Unique Circumstances</h4>
@@ -495,7 +495,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
       {/* Header / Status */}
-      <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-200">
+      <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200">
         <div>
           <h3 className="text-lg font-semibold text-slate-900">Edit IPS Draft</h3>
           <p className="text-sm text-slate-500">Make changes to the Investment Policy Statement.</p>
