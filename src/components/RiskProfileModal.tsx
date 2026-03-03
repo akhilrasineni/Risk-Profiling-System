@@ -47,10 +47,10 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
   const [showBehavioral, setShowBehavioral] = useState(true);
-  const [showDualScoring, setShowDualScoring] = useState(true);
-  const [showConsistency, setShowConsistency] = useState(true);
-  const [showBiases, setShowBiases] = useState(true);
-  const [showClassification, setShowClassification] = useState(true);
+  const [showDualScoring, setShowDualScoring] = useState(false);
+  const [showConsistency, setShowConsistency] = useState(false);
+  const [showBiases, setShowBiases] = useState(false);
+  const [showClassification, setShowClassification] = useState(false);
   
   const [generatingIPS, setGeneratingIPS] = useState(false);
   const [ipsError, setIpsError] = useState<string | null>(null);
@@ -75,32 +75,24 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
           setData(jsonProfile.data);
           setOverrideCategory(jsonProfile.data.risk_category);
           
-          // Automatically trigger consistency scan if not already present
+          // Consistency scan
           if (jsonProfile.data.consistency_analysis) {
             setAnalysis(jsonProfile.data.consistency_analysis);
-          } else {
-            handleAnalyze(jsonProfile.data);
           }
 
-          // Automatically trigger dual scoring if not already present
+          // Dual scoring
           if (jsonProfile.data.dual_scoring_analysis) {
             setDualScoring(jsonProfile.data.dual_scoring_analysis);
-          } else {
-            handleDualScoring(jsonProfile.data);
           }
 
-          // Automatically trigger behavioral bias detection if not already present
+          // Behavioral bias detection
           if (jsonProfile.data.behavioral_bias_analysis) {
             setBehavioralBiases(jsonProfile.data.behavioral_bias_analysis);
-          } else {
-            handleBehavioralBiases(jsonProfile.data);
           }
 
-          // Automatically trigger risk classification if not already present
+          // Risk classification
           if (jsonProfile.data.risk_probability_analysis) {
             setRiskClassification(jsonProfile.data.risk_probability_analysis);
-          } else {
-            handleRiskClassification(jsonProfile.data);
           }
         } else {
           setError(jsonProfile.message || 'Failed to load profile');
@@ -145,6 +137,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
     setAnalyzing(true);
     setAnalysisError(null);
+    setShowConsistency(true);
     try {
       // Call AI Service directly from frontend
       const result = await aiService.analyzeInconsistencies(
@@ -182,6 +175,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
     setAnalyzingDual(true);
     setDualError(null);
+    setShowDualScoring(true);
     try {
       const result = await aiService.analyzeDualScoring(
         client,
@@ -218,6 +212,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
     setAnalyzingBiases(true);
     setBiasesError(null);
+    setShowBiases(true);
     try {
       const result = await aiService.analyzeBehavioralBiases(
         targetData.responses
@@ -253,6 +248,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
     setAnalyzingClassification(true);
     setClassificationError(null);
+    setShowClassification(true);
     try {
       const result = await aiService.analyzeRiskProbabilities(
         targetData.responses
@@ -777,6 +773,36 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
+                          {!dualScoring && !analyzingDual && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDualScoring();
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-violet-700 transition-all shadow-sm active:scale-95"
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              Run Analysis
+                            </button>
+                          )}
+                          {dualScoring && !analyzingDual && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDualScoring();
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95"
+                            >
+                              <Activity className="w-3 h-3" />
+                              Re-run
+                            </button>
+                          )}
+                          {analyzingDual && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-violet-50 text-violet-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Analyzing...
+                            </div>
+                          )}
                           <Tooltip alignment="right" content={
                             <div className="text-left space-y-1">
                               <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Dual Scoring Model</p>
@@ -949,6 +975,36 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
+                          {!analysis && !analyzing && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAnalyze();
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 transition-all shadow-sm active:scale-95"
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              Run Scan
+                            </button>
+                          )}
+                          {analysis && !analyzing && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAnalyze();
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95"
+                            >
+                              <Search className="w-3 h-3" />
+                              Re-scan
+                            </button>
+                          )}
+                          {analyzing && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Scanning...
+                            </div>
+                          )}
                           <Tooltip alignment="right" content={
                             <div className="text-left space-y-1">
                               <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Consistency Scan</p>
@@ -1105,6 +1161,36 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
+                          {!behavioralBiases && !analyzingBiases && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleBehavioralBiases();
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm active:scale-95"
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              Run Analysis
+                            </button>
+                          )}
+                          {behavioralBiases && !analyzingBiases && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleBehavioralBiases();
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95"
+                            >
+                              <BrainCircuit className="w-3 h-3" />
+                              Re-run
+                            </button>
+                          )}
+                          {analyzingBiases && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Analyzing...
+                            </div>
+                          )}
                           <Tooltip alignment="right" content={
                             <div className="text-left space-y-1">
                               <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Bias Detection</p>
@@ -1207,6 +1293,36 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
+                          {!riskClassification && !analyzingClassification && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRiskClassification();
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-800 transition-all shadow-sm active:scale-95"
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              Run Model
+                            </button>
+                          )}
+                          {riskClassification && !analyzingClassification && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRiskClassification();
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95"
+                            >
+                              <ClipboardList className="w-3 h-3" />
+                              Re-run
+                            </button>
+                          )}
+                          {analyzingClassification && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Calculating...
+                            </div>
+                          )}
                           <Tooltip alignment="right" content={
                             <div className="text-left space-y-1">
                               <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Risk Probability Model</p>
