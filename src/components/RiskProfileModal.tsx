@@ -310,12 +310,13 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         setLoading(false);
       }
 
-      // Run AI models sequentially AFTER initial render
+      // Run only the first 2 AI models on load to reduce stress
       if (fetchedProfileData) {
-        await handleAnalyze(fetchedProfileData);
-        await handleDualScoring(fetchedProfileData);
-        await handleBehavioralBiases(fetchedProfileData);
-        await handleRiskClassification(fetchedProfileData);
+        // Batch 1: Consistency & Dual Scoring
+        await Promise.all([
+          handleAnalyze(fetchedProfileData),
+          handleDualScoring(fetchedProfileData)
+        ]);
       }
     };
     fetchData();

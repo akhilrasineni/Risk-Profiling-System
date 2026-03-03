@@ -27,6 +27,8 @@ export class AIService {
     } catch (error: any) {
       const isRetryable = 
         error.message?.includes("503") || 
+        error.message?.includes("500") ||
+        error.message?.includes("xhr error") ||
         error.message?.includes("high demand") || 
         error.message?.includes("UNAVAILABLE") ||
         error.message?.includes("fetch failed") ||
