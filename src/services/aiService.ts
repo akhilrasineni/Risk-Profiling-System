@@ -88,10 +88,93 @@ export class AIService {
   }
 
   /**
-   * Analyzes a risk assessment for inconsistencies.
+   * Analyzes a risk assessment for inconsistencies and returns a structured JSON report.
    */
   async analyzeInconsistencies(
     riskCategory: string,
+    responses: any[],
+    modelOverride?: AIModel
+  ) {
+    const model = modelOverride || this.currentModel;
+    const responsesText = responses.map((r: any) => {
+      return `- ${r.risk_questions?.question_text || r.question_text || 'Question'}: ${r.risk_answer_options?.option_text || r.option_text || 'Option'} (Weight: ${r.score_given || 'N/A'})`;
+    }).join('\n');
+
+    const prompt = `
+      As an expert financial risk profiling consistency engine, analyze the following risk assessment responses.
+      The client has been algorithmically categorized as: ${riskCategory}.
+
+      User Responses:
+      ${responsesText}
+
+      Your task:
+      1. Detect logical contradictions between answers (e.g., long horizon vs. early withdrawal).
+      2. Identify overconfidence patterns (e.g., high return expectations with low risk tolerance).
+      3. Identify mismatches between experience and volatility tolerance.
+      4. Assign a Consistency Score from 0–100.
+      5. Classify profile stability as: "Stable", "Slightly Inconsistent", or "Highly Conflicted".
+
+      Return a JSON object with the following structure:
+      {
+        "consistency_score": number,
+        "stability_flag": "Stable | Slightly Inconsistent | Highly Conflicted",
+        "contradictions_detected": ["string", "string"],
+        "explanation": "A concise markdown-formatted summary of the reasoning"
+      }
+    `;
+
+    const ai = this.getClient();
+    const result = await this.withRetry(() => ai.models.generateContent({
+      model,
+      contents: [{ parts: [{ text: prompt }] }],
+      config: { 
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            consistency_score: { type: Type.NUMBER },
+            stability_flag: { type: Type.STRING, description: "Stable | Slightly Inconsistent | Highly Conflicted" },
+            contradictions_detected: { 
+              type: Type.ARRAY, 
+              items: { type: Type.STRING } 
+            },
+            explanation: { type: Type.STRING, description: "A concise markdown-formatted summary of the reasoning, highlighting key findings in bold." }
+          },
+          required: ["consistency_score", "stability_flag", "contradictions_detected", "explanation"]
+        }
+      }
+    }));
+
+    const aiResponse = result.text || "{}";
+    try {
+      const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
+      
+      // Clean up any internal "thought" artifacts in the explanation
+      if (parsed.explanation) {
+        parsed.explanation = parsed.explanation.replace(/<thought>[\s\S]*?<\/thought>/gi, '');
+        parsed.explanation = parsed.explanation.replace(/^thought\)\s*/i, '');
+        parsed.explanation = parsed.explanation.replace(/\(thought\)\s*/i, '');
+        parsed.explanation = parsed.explanation.replace(/^thought:\s*/i, '');
+        parsed.explanation = parsed.explanation.replace(/\n\s*thought:\s*/i, '\n');
+        parsed.explanation = parsed.explanation.trim();
+      }
+      
+      return parsed;
+    } catch (e) {
+      console.error("Failed to parse AI response:", e);
+      return { 
+        consistency_score: 0, 
+        stability_flag: "Highly Conflicted", 
+        contradictions_detected: ["Failed to analyze profile consistency"], 
+        explanation: "An error occurred during consistency analysis." 
+      };
+    }
+  }
+  /**
+   * Performs a multi-class risk classification to predict probability distribution.
+   */
+  async analyzeRiskProbabilities(
     responses: any[],
     modelOverride?: AIModel
   ) {
@@ -101,53 +184,250 @@ export class AIService {
     }).join('\n');
 
     const prompt = `
-      As an expert financial risk analyst, perform a concise deep-dive consistency check on the following risk assessment responses.
-      The client has been algorithmically categorized as: ${riskCategory}.
+      You are a multi-class risk classification model. Analyze the following questionnaire inputs and behavioral signals to predict the probability distribution across risk categories.
+
+      Risk Categories:
+      - Conservative
+      - Moderate
+      - Aggressive
 
       User Responses:
       ${responsesText}
 
-      Your task is to identify "Behavioral Friction Points" or "Logical Contradictions". 
-      
-      **Formatting Rules:**
-      - DO NOT use email formatting (no "Dear Advisor", "Subject", or "Best regards").
-      - DO NOT include any internal "thought" or "reasoning" tags in the output.
-      - Use clear, bold headers (e.g., ### Profile Alignment).
-      - Use bullet points for specific observations.
-      - Highlight key terms using **bold text**.
-      - Keep the total response length moderate (approx 150-200 words).
-      
-      **Structure:**
-      1. ### Profile Alignment
-         High-level verdict on the ${riskCategory} category.
-      2. ### Evidence of Consistency
-         1-2 key responses that anchor this profile.
-      3. ### Friction Points
-         Identify specific contradictions (e.g., aggressive goals vs. low loss tolerance). If none, state "Profile is logically consistent."
-      4. ### Advisor Action
-         One specific question or talking point for the client meeting.
+      Your task:
+      1. Predict probability distribution across the three risk categories.
+      2. Ensure probabilities sum exactly to 100.
+      3. Identify the highest probability category as the "predicted_risk_band".
+      4. Calculate "confidence_level" as the absolute difference between the top two probabilities.
 
-      Tone: Professional, objective, and data-driven.
+      Return a JSON object with the following structure:
+      {
+        "probabilities": {
+          "Conservative": number,
+          "Moderate": number,
+          "Aggressive": number
+        },
+        "predicted_risk_band": "Conservative | Moderate | Aggressive",
+        "confidence_level": number,
+        "explanation": "A concise markdown-formatted summary of why the model favored the predicted band and the significance of the confidence level."
+      }
     `;
 
     const ai = this.getClient();
     const result = await this.withRetry(() => ai.models.generateContent({
       model,
       contents: [{ parts: [{ text: prompt }] }],
-      config: { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+      config: { 
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            probabilities: {
+              type: Type.OBJECT,
+              properties: {
+                Conservative: { type: Type.NUMBER },
+                Moderate: { type: Type.NUMBER },
+                Aggressive: { type: Type.NUMBER }
+              },
+              required: ["Conservative", "Moderate", "Aggressive"]
+            },
+            predicted_risk_band: { type: Type.STRING },
+            confidence_level: { type: Type.NUMBER },
+            explanation: { type: Type.STRING }
+          },
+          required: ["probabilities", "predicted_risk_band", "confidence_level", "explanation"]
+        }
+      }
     }));
 
-    let text = result.text || "Analysis complete, but no text returned.";
-    
-    // Clean up any internal "thought" artifacts that might leak
-    text = text.replace(/<thought>[\s\S]*?<\/thought>/gi, '');
-    text = text.replace(/^thought\)\s*/i, '');
-    text = text.replace(/\(thought\)\s*/i, '');
-    text = text.replace(/^thought:\s*/i, '');
-    text = text.replace(/\n\s*thought:\s*/i, '\n');
-    
-    return text.trim();
+    const aiResponse = result.text || "{}";
+    try {
+      const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
+      if (parsed.explanation) {
+        parsed.explanation = parsed.explanation.replace(/<thought>[\s\S]*?<\/thought>/gi, '').trim();
+      }
+      return parsed;
+    } catch (e) {
+      console.error("Failed to parse AI risk probability response:", e);
+      return { 
+        probabilities: { Conservative: 33.3, Moderate: 33.3, Aggressive: 33.4 },
+        predicted_risk_band: "Moderate",
+        confidence_level: 0,
+        explanation: "An error occurred during risk probability analysis." 
+      };
+    }
   }
+
+  /**
+   * Detects behavioral biases based on responses.
+   */
+  async analyzeBehavioralBiases(
+    responses: any[],
+    modelOverride?: AIModel
+  ) {
+    const model = modelOverride || this.currentModel;
+    const responsesText = responses.map((r: any) => {
+      return `- ${r.risk_questions?.question_text || r.question_text || 'Question'}: ${r.risk_answer_options?.option_text || r.option_text || 'Option'}`;
+    }).join('\n');
+
+    const prompt = `
+      You are a behavioral finance AI model. Analyze the following investment questionnaire responses to detect psychological investment biases.
+
+      Analyze:
+      - Expected return vs experience level
+      - Reaction to drawdowns
+      - Loss history
+      - Derivative exposure
+      - Volatility comfort
+
+      Identify the likelihood (Low | Medium | High) of:
+      1. Overconfidence Bias
+      2. Loss Aversion Bias
+      3. Unrealistic Return Expectation
+      4. Recency Bias
+
+      User Responses:
+      ${responsesText}
+
+      Return a JSON object with the following structure:
+      {
+        "overconfidence": "Low | Medium | High",
+        "loss_aversion": "Low | Medium | High",
+        "unrealistic_expectation": "Low | Medium | High",
+        "recency_bias": "Low | Medium | High",
+        "dominant_behavioral_pattern": "A concise markdown-formatted summary of the key behavioral findings."
+      }
+    `;
+
+    const ai = this.getClient();
+    const result = await this.withRetry(() => ai.models.generateContent({
+      model,
+      contents: [{ parts: [{ text: prompt }] }],
+      config: { 
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            overconfidence: { type: Type.STRING, description: "Low | Medium | High" },
+            loss_aversion: { type: Type.STRING, description: "Low | Medium | High" },
+            unrealistic_expectation: { type: Type.STRING, description: "Low | Medium | High" },
+            recency_bias: { type: Type.STRING, description: "Low | Medium | High" },
+            dominant_behavioral_pattern: { type: Type.STRING }
+          },
+          required: ["overconfidence", "loss_aversion", "unrealistic_expectation", "recency_bias", "dominant_behavioral_pattern"]
+        }
+      }
+    }));
+
+    const aiResponse = result.text || "{}";
+    try {
+      const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
+      if (parsed.dominant_behavioral_pattern) {
+        parsed.dominant_behavioral_pattern = parsed.dominant_behavioral_pattern.replace(/<thought>[\s\S]*?<\/thought>/gi, '').trim();
+      }
+      return parsed;
+    } catch (e) {
+      console.error("Failed to parse AI behavioral bias response:", e);
+      return { 
+        overconfidence: "Low", 
+        loss_aversion: "Low", 
+        unrealistic_expectation: "Low", 
+        recency_bias: "Low", 
+        dominant_behavioral_pattern: "An error occurred during behavioral bias analysis." 
+      };
+    }
+  }
+
+  /**
+   * Performs a dual risk scoring analysis (Capacity vs Tolerance).
+   */
+  async analyzeDualScoring(
+    client: Client,
+    responses: any[],
+    modelOverride?: AIModel
+  ) {
+    const model = modelOverride || this.currentModel;
+    const responsesText = responses.map((r: any) => {
+      return `- ${r.risk_questions?.question_text || r.question_text || 'Question'}: ${r.risk_answer_options?.option_text || r.option_text || 'Option'}`;
+    }).join('\n');
+
+    const prompt = `
+      You are an advanced financial risk scoring engine. Perform a Dual Risk Scoring analysis for the following client.
+      
+      Client Financial Context:
+      - Net Worth: $${client.net_worth?.toLocaleString() || 'N/A'}
+      - Annual Income: $${client.annual_income?.toLocaleString() || 'N/A'}
+      - Tax Bracket: ${client.tax_bracket || 'N/A'}%
+      - Liquidity Needs: $${client.liquidity_needs?.toLocaleString() || 'N/A'}
+
+      User Responses:
+      ${responsesText}
+
+      Your task:
+      1. Calculate Risk Capacity Score (0–100): Financial ability to take risk.
+         Inputs to consider: % of net worth invested, emergency fund coverage, income stability, withdrawal rate, time horizon.
+      2. Calculate Risk Tolerance Score (0–100): Emotional comfort with risk.
+         Inputs to consider: Reaction to 20% drop, reaction to 2-year market decline, volatility comfort level, years of experience, largest temporary loss experienced.
+      3. Final Risk Score = Minimum of the two.
+      4. Classify final risk band:
+         - Conservative (0–35)
+         - Moderate (36–70)
+         - Aggressive (71–100)
+
+      Return a JSON object with the following structure:
+      {
+        "capacity_score": number,
+        "tolerance_score": number,
+        "final_risk_score": number,
+        "risk_band": "Conservative | Moderate | Aggressive",
+        "explanation": "A concise markdown-formatted summary of the reasoning, explaining the gap between capacity and tolerance if one exists."
+      }
+    `;
+
+    const ai = this.getClient();
+    const result = await this.withRetry(() => ai.models.generateContent({
+      model,
+      contents: [{ parts: [{ text: prompt }] }],
+      config: { 
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            capacity_score: { type: Type.NUMBER },
+            tolerance_score: { type: Type.NUMBER },
+            final_risk_score: { type: Type.NUMBER },
+            risk_band: { type: Type.STRING, description: "Conservative | Moderate | Aggressive" },
+            explanation: { type: Type.STRING }
+          },
+          required: ["capacity_score", "tolerance_score", "final_risk_score", "risk_band", "explanation"]
+        }
+      }
+    }));
+
+    const aiResponse = result.text || "{}";
+    try {
+      const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
+      
+      if (parsed.explanation) {
+        parsed.explanation = parsed.explanation.replace(/<thought>[\s\S]*?<\/thought>/gi, '').trim();
+      }
+      
+      return parsed;
+    } catch (e) {
+      console.error("Failed to parse AI dual scoring response:", e);
+      return { 
+        capacity_score: 0, 
+        tolerance_score: 0, 
+        final_risk_score: 0, 
+        risk_band: "Conservative", 
+        explanation: "An error occurred during dual risk scoring analysis." 
+      };
+    }
+  }
+
   async generateFullIPS(
     client: Client,
     riskCategory: string,
