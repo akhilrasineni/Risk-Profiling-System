@@ -9,6 +9,59 @@ import { aiService } from '../services/aiService';
 import { ALLOCATION_MODELS, RiskCategory } from '../constants/allocationModels';
 import Tooltip from './Tooltip';
 
+const AIErrorDisplay = ({ error, onRetry }: { error: string, onRetry?: () => void }) => {
+  let title = "Analysis Unavailable";
+  let message = "An unexpected error occurred during the analysis. Please try again.";
+  
+  try {
+    // Try to parse if it's a JSON string
+    if (error && error.trim().startsWith('{')) {
+      const parsed = JSON.parse(error);
+      if (parsed.error) {
+         if (parsed.error.code === 429 || parsed.error.status === "RESOURCE_EXHAUSTED") {
+            title = "System Capacity Reached";
+            message = "We are currently experiencing high demand for our AI models. Please wait a moment and try again.";
+         } else {
+            message = parsed.error.message || "An error returned from the AI service.";
+         }
+      }
+    } else if (error) {
+       // Check for common text patterns if not JSON
+       if (error.includes("429") || error.includes("quota") || error.includes("RESOURCE_EXHAUSTED")) {
+          title = "System Capacity Reached";
+          message = "We are currently experiencing high demand for our AI models. Please wait a moment and try again.";
+       } else {
+          message = error;
+       }
+    }
+  } catch (e) {
+    message = error;
+  }
+
+  return (
+    <div className="p-6 bg-amber-50 border border-amber-100 rounded-2xl flex flex-col items-center text-center gap-3 animate-in fade-in zoom-in-95 duration-300">
+      <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 mb-1">
+        <AlertTriangle className="w-5 h-5" />
+      </div>
+      <div>
+        <h5 className="text-sm font-bold text-slate-900">{title}</h5>
+        <p className="text-xs text-slate-500 mt-1 max-w-md leading-relaxed">{message}</p>
+      </div>
+      {onRetry && (
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            onRetry();
+          }}
+          className="mt-2 px-4 py-2 bg-white border border-slate-200 shadow-sm rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-all active:scale-95 uppercase tracking-wider"
+        >
+          Retry Analysis
+        </button>
+      )}
+    </div>
+  );
+};
+
 interface RiskProfileModalProps {
   client: Client;
   onClose: () => void;
@@ -215,6 +268,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      let fetchedProfileData = null;
       try {
         // 1. Fetch Risk Assessment
         const resProfile = await fetch(`/api/clients/${client.id}/risk_assessment`);
@@ -227,13 +281,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         if (jsonProfile.status === 'ok') {
           setData(jsonProfile.data);
           setOverrideCategory(jsonProfile.data.risk_category);
-          
-          // Auto-run or show existing analysis
-          handleAnalyze(jsonProfile.data);
-          handleDualScoring(jsonProfile.data);
-          handleBehavioralBiases(jsonProfile.data);
-          handleRiskClassification(jsonProfile.data);
-
+          fetchedProfileData = jsonProfile.data;
         } else {
           setError(jsonProfile.message || 'Failed to load profile');
         }
@@ -260,6 +308,14 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         setError(err.message || 'Network error');
       } finally {
         setLoading(false);
+      }
+
+      // Run AI models sequentially AFTER initial render
+      if (fetchedProfileData) {
+        await handleAnalyze(fetchedProfileData);
+        await handleDualScoring(fetchedProfileData);
+        await handleBehavioralBiases(fetchedProfileData);
+        await handleRiskClassification(fetchedProfileData);
       }
     };
     fetchData();
@@ -843,10 +899,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               </div>
                             </div>
                           ) : dualError ? (
-                            <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-800 text-xs">
-                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                              <p>{dualError}</p>
-                            </div>
+                            <AIErrorDisplay error={dualError} onRetry={handleDualScoring} />
                           ) : dualScoring ? (
                             <div className="space-y-6">
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1046,10 +1099,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               </div>
                             </div>
                           ) : analysisError ? (
-                            <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-800 text-xs">
-                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                              <p>{analysisError}</p>
-                            </div>
+                            <AIErrorDisplay error={analysisError} onRetry={handleAnalyze} />
                           ) : analysis ? (
                             <div className="space-y-6">
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1223,10 +1273,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               </div>
                             </div>
                           ) : biasesError ? (
-                            <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-800 text-xs">
-                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                              <p>{biasesError}</p>
-                            </div>
+                            <AIErrorDisplay error={biasesError} onRetry={handleBehavioralBiases} />
                           ) : behavioralBiases ? (
                             <div className="space-y-6">
                               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1349,10 +1396,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               </div>
                             </div>
                           ) : classificationError ? (
-                            <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-800 text-xs">
-                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                              <p>{classificationError}</p>
-                            </div>
+                            <AIErrorDisplay error={classificationError} onRetry={handleRiskClassification} />
                           ) : riskClassification ? (
                             <div className="space-y-6">
                               {/* Probability Bars */}

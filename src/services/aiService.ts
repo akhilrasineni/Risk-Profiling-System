@@ -30,7 +30,8 @@ export class AIService {
         error.message?.includes("high demand") || 
         error.message?.includes("UNAVAILABLE") ||
         error.message?.includes("fetch failed") ||
-        error.message?.includes("Timeout");
+        error.message?.includes("Timeout") ||
+        (error.message?.includes("429") && !error.message?.toLowerCase().includes("quota"));
 
       if (retries > 0 && isRetryable) {
         console.warn(`Gemini API error (retryable), retrying in ${delay}ms... (${retries} retries left)`);
