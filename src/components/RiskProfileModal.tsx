@@ -59,71 +59,6 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   const [buildingPortfolio, setBuildingPortfolio] = useState(false);
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        // 1. Fetch Risk Assessment
-        const resProfile = await fetch(`/api/clients/${client.id}/risk_assessment`);
-        if (!resProfile.ok) {
-          const errorText = await resProfile.text();
-          throw new Error(`Failed to load profile: ${resProfile.status} ${resProfile.statusText}${errorText ? ` - ${errorText.slice(0, 100)}` : ''}`);
-        }
-        const jsonProfile = await resProfile.json();
-        
-        if (jsonProfile.status === 'ok') {
-          setData(jsonProfile.data);
-          setOverrideCategory(jsonProfile.data.risk_category);
-          
-          // Consistency scan
-          if (jsonProfile.data.consistency_analysis) {
-            setAnalysis(jsonProfile.data.consistency_analysis);
-          }
-
-          // Dual scoring
-          if (jsonProfile.data.dual_scoring_analysis) {
-            setDualScoring(jsonProfile.data.dual_scoring_analysis);
-          }
-
-          // Behavioral bias detection
-          if (jsonProfile.data.behavioral_bias_analysis) {
-            setBehavioralBiases(jsonProfile.data.behavioral_bias_analysis);
-          }
-
-          // Risk classification
-          if (jsonProfile.data.risk_probability_analysis) {
-            setRiskClassification(jsonProfile.data.risk_probability_analysis);
-          }
-        } else {
-          setError(jsonProfile.message || 'Failed to load profile');
-        }
-
-        // 2. Fetch Existing IPS (if any)
-        const resIPS = await fetch(`/api/ips/client/${client.id}`);
-        if (resIPS.ok) {
-          const jsonIPS = await resIPS.json();
-          if (jsonIPS.status === 'ok' && jsonIPS.data) {
-            setIpsDocument(jsonIPS.data);
-          }
-        }
-
-        // 3. Fetch Existing Portfolio (if any)
-        const resPort = await fetch(`/api/portfolios/client/${client.id}`);
-        if (resPort.ok) {
-          const jsonPort = await resPort.json();
-          if (jsonPort.status === 'ok' && jsonPort.data) {
-            setPortfolio(jsonPort.data);
-          }
-        }
-
-      } catch (err: any) {
-        setError(err.message || 'Network error');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [client.id]);
 
   const handleAnalyze = async (assessmentData?: any) => {
     const targetData = assessmentData || data;
@@ -132,6 +67,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     // If we already have analysis in the data, use it
     if (targetData.consistency_analysis && !analyzing) {
       setAnalysis(targetData.consistency_analysis);
+      setShowConsistency(true);
       return;
     }
 
@@ -170,6 +106,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
     if (targetData.dual_scoring_analysis && !analyzingDual) {
       setDualScoring(targetData.dual_scoring_analysis);
+      setShowDualScoring(true);
       return;
     }
 
@@ -207,6 +144,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
     if (targetData.behavioral_bias_analysis && !analyzingBiases) {
       setBehavioralBiases(targetData.behavioral_bias_analysis);
+      setShowBiases(true);
       return;
     }
 
@@ -243,6 +181,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
     if (targetData.risk_probability_analysis && !analyzingClassification) {
       setRiskClassification(targetData.risk_probability_analysis);
+      setShowClassification(true);
       return;
     }
 
@@ -272,6 +211,59 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       setAnalyzingClassification(false);
     }
   };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // 1. Fetch Risk Assessment
+        const resProfile = await fetch(`/api/clients/${client.id}/risk_assessment`);
+        if (!resProfile.ok) {
+          const errorText = await resProfile.text();
+          throw new Error(`Failed to load profile: ${resProfile.status} ${resProfile.statusText}${errorText ? ` - ${errorText.slice(0, 100)}` : ''}`);
+        }
+        const jsonProfile = await resProfile.json();
+        
+        if (jsonProfile.status === 'ok') {
+          setData(jsonProfile.data);
+          setOverrideCategory(jsonProfile.data.risk_category);
+          
+          // Auto-run or show existing analysis
+          handleAnalyze(jsonProfile.data);
+          handleDualScoring(jsonProfile.data);
+          handleBehavioralBiases(jsonProfile.data);
+          handleRiskClassification(jsonProfile.data);
+
+        } else {
+          setError(jsonProfile.message || 'Failed to load profile');
+        }
+
+        // 2. Fetch Existing IPS (if any)
+        const resIPS = await fetch(`/api/ips/client/${client.id}`);
+        if (resIPS.ok) {
+          const jsonIPS = await resIPS.json();
+          if (jsonIPS.status === 'ok' && jsonIPS.data) {
+            setIpsDocument(jsonIPS.data);
+          }
+        }
+
+        // 3. Fetch Existing Portfolio (if any)
+        const resPort = await fetch(`/api/portfolios/client/${client.id}`);
+        if (resPort.ok) {
+          const jsonPort = await resPort.json();
+          if (jsonPort.status === 'ok' && jsonPort.data) {
+            setPortfolio(jsonPort.data);
+          }
+        }
+
+      } catch (err: any) {
+        setError(err.message || 'Network error');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [client.id]);
 
   const handleFinalize = async () => {
     if (!data) return;
