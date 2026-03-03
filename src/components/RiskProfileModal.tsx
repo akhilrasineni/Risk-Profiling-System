@@ -774,28 +774,30 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                         </div>
                         <div className="flex items-center gap-4">
                           {!dualScoring && !analyzingDual && (
-                            <button
+                            <div
+                              role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleDualScoring();
                               }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-violet-700 transition-all shadow-sm active:scale-95"
+                              className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-violet-700 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
                               <Sparkles className="w-3 h-3" />
                               Run Analysis
-                            </button>
+                            </div>
                           )}
                           {dualScoring && !analyzingDual && (
-                            <button
+                            <div
+                              role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleDualScoring();
                               }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95"
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
                               <Activity className="w-3 h-3" />
                               Re-run
-                            </button>
+                            </div>
                           )}
                           {analyzingDual && (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-violet-50 text-violet-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">
@@ -976,28 +978,30 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                         </div>
                         <div className="flex items-center gap-4">
                           {!analysis && !analyzing && (
-                            <button
+                            <div
+                              role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleAnalyze();
                               }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 transition-all shadow-sm active:scale-95"
+                              className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
                               <Sparkles className="w-3 h-3" />
                               Run Scan
-                            </button>
+                            </div>
                           )}
                           {analysis && !analyzing && (
-                            <button
+                            <div
+                              role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleAnalyze();
                               }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95"
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
                               <Search className="w-3 h-3" />
                               Re-scan
-                            </button>
+                            </div>
                           )}
                           {analyzing && (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">
@@ -1162,28 +1166,30 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                         </div>
                         <div className="flex items-center gap-4">
                           {!behavioralBiases && !analyzingBiases && (
-                            <button
+                            <div
+                              role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleBehavioralBiases();
                               }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm active:scale-95"
+                              className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
                               <Sparkles className="w-3 h-3" />
                               Run Analysis
-                            </button>
+                            </div>
                           )}
                           {behavioralBiases && !analyzingBiases && (
-                            <button
+                            <div
+                              role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleBehavioralBiases();
                               }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95"
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
                               <BrainCircuit className="w-3 h-3" />
                               Re-run
-                            </button>
+                            </div>
                           )}
                           {analyzingBiases && (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">
@@ -1294,28 +1300,30 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                         </div>
                         <div className="flex items-center gap-4">
                           {!riskClassification && !analyzingClassification && (
-                            <button
+                            <div
+                              role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleRiskClassification();
                               }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-800 transition-all shadow-sm active:scale-95"
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-800 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
                               <Sparkles className="w-3 h-3" />
                               Run Model
-                            </button>
+                            </div>
                           )}
                           {riskClassification && !analyzingClassification && (
-                            <button
+                            <div
+                              role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleRiskClassification();
                               }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95"
+                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
                               <ClipboardList className="w-3 h-3" />
                               Re-run
-                            </button>
+                            </div>
                           )}
                           {analyzingClassification && (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">

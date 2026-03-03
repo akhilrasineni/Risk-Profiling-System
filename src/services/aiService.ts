@@ -1,4 +1,4 @@
-import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { Client, RiskQuestion, RiskQuestionnaire, AIModel } from "../types";
 
 export class AIService {
@@ -78,7 +78,6 @@ export class AIService {
       model,
       contents: [{ parts: [{ text: prompt }] }],
       config: { 
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json"
       }
     }));
@@ -128,7 +127,6 @@ export class AIService {
       model,
       contents: [{ parts: [{ text: prompt }] }],
       config: { 
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -218,7 +216,6 @@ export class AIService {
       model,
       contents: [{ parts: [{ text: prompt }] }],
       config: { 
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -305,7 +302,6 @@ export class AIService {
       model,
       contents: [{ parts: [{ text: prompt }] }],
       config: { 
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -391,7 +387,6 @@ export class AIService {
       model,
       contents: [{ parts: [{ text: prompt }] }],
       config: { 
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -492,7 +487,6 @@ export class AIService {
       model,
       contents: [{ parts: [{ text: prompt }] }],
       config: { 
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json"
       }
     }));
@@ -559,7 +553,6 @@ export class AIService {
       model,
       contents: [{ parts: [{ text: prompt }] }],
       config: { 
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
