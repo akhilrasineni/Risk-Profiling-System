@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AlertCircle, Loader2, X, ShieldCheck, Activity, BrainCircuit, Search, Check, ClipboardList, FileText, User, Info } from 'lucide-react';
 import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
 import { Client, IPSDocument, TargetAllocation } from '../types';
 import IPSEditor from './IPSEditor';
 import PortfolioEditor from './PortfolioEditor';
@@ -594,10 +595,10 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           </div>
                         ) : analysis ? (
                           <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                            <div className="prose prose-sm max-w-none">
-                              <div className="whitespace-pre-wrap text-slate-600 leading-relaxed text-sm">
+                            <div className="prose prose-sm max-w-none prose-slate prose-p:leading-relaxed prose-li:my-1 prose-headings:mb-2 prose-headings:mt-4 first:prose-headings:mt-0">
+                              <ReactMarkdown>
                                 {analysis}
-                              </div>
+                              </ReactMarkdown>
                             </div>
                           </div>
                         ) : (

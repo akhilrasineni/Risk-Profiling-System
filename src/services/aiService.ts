@@ -111,15 +111,21 @@ export class AIService {
       
       **Formatting Rules:**
       - DO NOT use email formatting (no "Dear Advisor", "Subject", or "Best regards").
-      - Use clear, bold headers.
+      - DO NOT include any internal "thought" or "reasoning" tags in the output.
+      - Use clear, bold headers (e.g., ### Profile Alignment).
       - Use bullet points for specific observations.
+      - Highlight key terms using **bold text**.
       - Keep the total response length moderate (approx 150-200 words).
       
       **Structure:**
-      1. **Profile Alignment**: High-level verdict on the ${riskCategory} category.
-      2. **Evidence of Consistency**: 1-2 key responses that anchor this profile.
-      3. **Friction Points**: Identify specific contradictions (e.g., aggressive goals vs. low loss tolerance). If none, state "Profile is logically consistent."
-      4. **Advisor Action**: One specific question or talking point for the client meeting.
+      1. ### Profile Alignment
+         High-level verdict on the ${riskCategory} category.
+      2. ### Evidence of Consistency
+         1-2 key responses that anchor this profile.
+      3. ### Friction Points
+         Identify specific contradictions (e.g., aggressive goals vs. low loss tolerance). If none, state "Profile is logically consistent."
+      4. ### Advisor Action
+         One specific question or talking point for the client meeting.
 
       Tone: Professional, objective, and data-driven.
     `;
@@ -131,7 +137,16 @@ export class AIService {
       config: { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
     }));
 
-    return result.text || "Analysis complete, but no text returned.";
+    let text = result.text || "Analysis complete, but no text returned.";
+    
+    // Clean up any internal "thought" artifacts that might leak
+    text = text.replace(/<thought>[\s\S]*?<\/thought>/gi, '');
+    text = text.replace(/^thought\)\s*/i, '');
+    text = text.replace(/\(thought\)\s*/i, '');
+    text = text.replace(/^thought:\s*/i, '');
+    text = text.replace(/\n\s*thought:\s*/i, '\n');
+    
+    return text.trim();
   }
   async generateFullIPS(
     client: Client,
