@@ -137,7 +137,29 @@ router.post("/:id/risk-probabilities", async (req, res) => {
   }
 });
 
-// Reject a risk assessment (Allows the client to retake without deleting history)
+// Save AI analysis manually triggered by advisor
+router.post("/:id/ai-analysis", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { ai_behavior_summary, ai_confidence_score } = req.body;
+
+    const { data, error } = await supabase
+      .from('risk_assessments')
+      .update({ ai_behavior_summary, ai_confidence_score })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ status: "ok", data });
+  } catch (error: any) {
+    console.error("Error saving AI analysis:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// Reject a risk assessment (Deletes it and allows the client to retake)
 router.post("/:id/reject", async (req, res) => {
   try {
     const { id } = req.params;
@@ -151,14 +173,10 @@ router.post("/:id/reject", async (req, res) => {
 
     if (fetchError || !assessment) throw new Error("Assessment not found");
 
-    // 2. Mark this assessment as rejected in the history
+    // 2. Delete the assessment
     await supabase
       .from('risk_assessments')
-      .update({ 
-        finalized_by_advisor: false,
-        finalized_at: null,
-        advisor_override_reason: 'Rejected by advisor. Client requested to retake.'
-      })
+      .delete()
       .eq('id', id);
 
     // 3. Reset the client's completion flag so they can retake it
@@ -167,7 +185,7 @@ router.post("/:id/reject", async (req, res) => {
       .update({ risk_assessment_completed: false })
       .eq('id', assessment.client_id);
 
-    res.json({ status: "ok", message: "Assessment rejected. Client can now retake." });
+    res.json({ status: "ok", message: "Assessment deleted. Client can now retake." });
   } catch (error: any) {
     console.error("Error rejecting assessment:", error);
     res.status(500).json({ status: "error", message: error.message });

@@ -78,10 +78,10 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
         reliability_score = analysis.reliability_score || 0;
       } catch (aiErr) {
         console.error("AI Analysis failed:", aiErr);
-        ai_behavior_summary = "AI analysis unavailable. Deterministic scoring used.";
-        consistency_score = 50;
-        response_stability = 50;
-        reliability_score = 50;
+        ai_behavior_summary = "";
+        consistency_score = 0;
+        response_stability = 0;
+        reliability_score = 0;
       }
 
       // 2. Calculate Deterministic Components

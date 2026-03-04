@@ -94,6 +94,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   const [dualError, setDualError] = useState<string | null>(null);
   const [biasesError, setBiasesError] = useState<string | null>(null);
   const [classificationError, setClassificationError] = useState<string | null>(null);
+  const [analyzingSummary, setAnalyzingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   const [overrideMode, setOverrideMode] = useState<boolean>(false);
   const [overrideCategory, setOverrideCategory] = useState<string>('');
@@ -269,6 +271,65 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       setClassificationError(err.message || 'Network error occurred during risk classification analysis');
     } finally {
       setAnalyzingClassification(false);
+    }
+  };
+
+  const handleRunAIAnalysis = async () => {
+    if (!data) return;
+    setAnalyzingSummary(true);
+    setSummaryError(null);
+    try {
+      // Fetch questionnaire
+      let qRes;
+      if (data.questionnaire_id && data.questionnaire_id !== 'undefined') {
+        qRes = await fetch(`/api/questionnaires/id/${data.questionnaire_id}`);
+      }
+      
+      let qData = qRes ? await qRes.json() : null;
+      
+      // Fallback if not found by ID or no ID present
+      if (!qData || !qData.data) {
+        qRes = await fetch(`/api/questionnaires/AFS-RP-2026-v1`);
+        qData = await qRes.json();
+      }
+      
+      if (!qData || !qData.data) throw new Error("Failed to fetch questionnaire");
+      const questionnaire = qData.data;
+
+      // Construct answers
+      const answers: Record<string, string> = {};
+      data.responses.forEach((r: any) => {
+        answers[r.question_id] = r.selected_option_id;
+      });
+
+      // Run AI
+      const analysis = await aiService.analyzeRiskAssessment(client, questionnaire, answers, selectedModel);
+      
+      const breakdown = {
+        consistency: analysis.consistency_score || 0,
+        boundary: 50, // Default since we don't have the full deterministic logic here
+        completion: 100, // Default
+        stability: analysis.response_stability || 0
+      };
+      const summaryWithBreakdown = `${analysis.behavioral_summary}\n\n[CONFIDENCE_BREAKDOWN]:${JSON.stringify(breakdown)}`;
+      const ai_confidence_score = analysis.reliability_score || 0;
+
+      // Update DB
+      const updateRes = await fetch(`/api/assessments/${data.id}/ai-analysis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ai_behavior_summary: summaryWithBreakdown, ai_confidence_score })
+      });
+
+      if (!updateRes.ok) throw new Error("Failed to save AI analysis to database");
+      
+      const updatedData = await updateRes.json();
+      setData(updatedData.data);
+    } catch (err: any) {
+      console.error(err);
+      setSummaryError(err.message || 'Failed to run AI analysis');
+    } finally {
+      setAnalyzingSummary(false);
     }
   };
 
@@ -542,8 +603,17 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     }
   };
 
-  const isEligibleForIPS = data && data.finalized_by_advisor && 
-    (data.ai_confidence_score > 1 ? data.ai_confidence_score >= 65 : data.ai_confidence_score >= 0.65);
+  const isEligibleForIPS = data && data.finalized_by_advisor;
+
+  const confidenceScore = data ? (data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score) : 0;
+  const isLowConfidence = confidenceScore < 65;
+
+  // Force override mode if confidence is low and not finalized
+  useEffect(() => {
+    if (data && !data.finalized_by_advisor && isLowConfidence) {
+      setOverrideMode(true);
+    }
+  }, [data, isLowConfidence]);
 
   return (
     <motion.div 
@@ -1522,14 +1592,29 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                         
                         {showBehavioral && (
                           <div className="px-8 pb-8 animate-in slide-in-from-top-2 duration-300">
-                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 relative overflow-hidden group">
-                              <div className="prose prose-sm max-w-none prose-slate prose-p:leading-relaxed prose-strong:text-slate-900 relative z-10">
-                                <p className="text-slate-700 text-lg leading-relaxed font-medium italic">
-                                  "{data.ai_behavior_summary.split('[')[0].trim()}"
-                                </p>
+                            {(!data.ai_behavior_summary || data.ai_confidence_score === 0) ? (
+                              <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100 flex flex-col items-center text-center">
+                                <p className="text-amber-800 text-sm mb-4">AI analysis was not completed for this assessment.</p>
+                                <button
+                                  onClick={handleRunAIAnalysis}
+                                  disabled={analyzingSummary}
+                                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
+                                >
+                                  {analyzingSummary ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                  {analyzingSummary ? 'Running Analysis...' : 'Run AI Analysis'}
+                                </button>
+                                {summaryError && <p className="text-red-600 text-xs mt-2">{summaryError}</p>}
                               </div>
-                              <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-violet-500/5 rounded-full blur-2xl group-hover:bg-violet-500/10 transition-colors" />
-                            </div>
+                            ) : (
+                              <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 relative overflow-hidden group">
+                                <div className="prose prose-sm max-w-none prose-slate prose-p:leading-relaxed prose-strong:text-slate-900 relative z-10">
+                                  <p className="text-slate-700 text-lg leading-relaxed font-medium italic">
+                                    "{data.ai_behavior_summary.split('[')[0].trim()}"
+                                  </p>
+                                </div>
+                                <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-violet-500/5 rounded-full blur-2xl group-hover:bg-violet-500/10 transition-colors" />
+                              </div>
+                            )}
                           </div>
                         )}
                         {/* Subtle background glow */}
@@ -1557,26 +1642,36 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           </div>
                           
                           <div className="mb-6">
-                            <div className="flex items-baseline gap-1">
-                              <p className="text-5xl font-display font-bold text-slate-900 tracking-tighter">
-                                {data.ai_confidence_score <= 1 
-                                  ? Math.round(data.ai_confidence_score * 100) 
-                                  : Math.round(data.ai_confidence_score)}
-                              </p>
-                              <p className="text-xl font-display font-bold text-slate-300">%</p>
-                            </div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">AI Confidence Score</p>
+                            {(!data.ai_behavior_summary || data.ai_confidence_score === 0) ? (
+                              <div className="text-amber-600 text-sm font-medium">
+                                Pending Analysis
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-baseline gap-1">
+                                  <p className="text-5xl font-display font-bold text-slate-900 tracking-tighter">
+                                    {data.ai_confidence_score <= 1 
+                                      ? Math.round(data.ai_confidence_score * 100) 
+                                      : Math.round(data.ai_confidence_score)}
+                                  </p>
+                                  <p className="text-xl font-display font-bold text-slate-300">%</p>
+                                </div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">AI Confidence Score</p>
+                              </>
+                            )}
                           </div>
 
                           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                             <motion.div 
                               initial={{ width: 0 }}
-                              animate={{ width: `${data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score}%` }}
+                              animate={{ width: `${(!data.ai_behavior_summary || data.ai_confidence_score === 0) ? 0 : (data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score)}%` }}
                               transition={{ duration: 1.5, ease: "easeOut" }}
                               className={`h-full rounded-full ${
-                                (data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score) >= 65 
-                                  ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]' 
-                                  : 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                                (!data.ai_behavior_summary || data.ai_confidence_score === 0)
+                                  ? 'bg-slate-300'
+                                  : (data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score) >= 65 
+                                    ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]' 
+                                    : 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
                               }`} 
                             />
                           </div>
@@ -1608,13 +1703,19 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div className="space-y-4">
-                              <label onClick={() => setOverrideMode(false)} className={`flex items-center gap-4 p-5 rounded-2xl border transition-all cursor-pointer group/label ${!overrideMode ? 'bg-white/10 border-white/20' : 'bg-transparent border-white/5 hover:bg-white/5'}`}>
+                              <label 
+                                onClick={() => {
+                                  if (!isLowConfidence) setOverrideMode(false);
+                                }} 
+                                className={`flex items-center gap-4 p-5 rounded-2xl border transition-all ${isLowConfidence ? 'opacity-50 cursor-not-allowed bg-slate-800/50 border-slate-700' : 'cursor-pointer group/label'} ${!overrideMode && !isLowConfidence ? 'bg-white/10 border-white/20' : 'bg-transparent border-white/5 hover:bg-white/5'}`}
+                              >
                                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${!overrideMode ? 'border-blue-400 bg-blue-400' : 'border-slate-600'}`}>
                                   {!overrideMode && <div className="w-2 h-2 rounded-full bg-white" />}
                                 </div>
                                 <div className="flex-1">
                                   <p className="text-sm font-bold">Confirm Calculated Profile</p>
                                   <p className="text-[10px] text-slate-400 font-medium">Use AI-recommended classification</p>
+                                  {isLowConfidence && <p className="text-[10px] text-amber-500 font-bold mt-1">Disabled due to low AI confidence</p>}
                                 </div>
                               </label>
 
@@ -1682,17 +1783,26 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                         <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-blue-600/10 rounded-full blur-[100px] group-hover:bg-blue-600/20 transition-colors" />
                       </div>
                     ) : (
-                      <div className="bg-emerald-50 border border-emerald-100 p-8 rounded-3xl flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-200">
+                      <div className="bg-emerald-50 border border-emerald-100 p-8 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+                        <div className="flex items-start sm:items-center gap-4">
+                          <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-200 shrink-0">
                             <Check className="w-6 h-6" />
                           </div>
                           <div>
                             <h4 className="text-emerald-900 font-bold">Profile Finalized</h4>
                             <p className="text-emerald-700 text-sm">This risk profile has been confirmed and is now active.</p>
+                            {(data.advisor_override_reason || isLowConfidence) && (
+                              <div className="mt-3 p-3 bg-white/60 rounded-xl border border-emerald-200/50 text-sm text-emerald-800">
+                                {data.advisor_override_reason ? (
+                                  <p><strong>Override Reason:</strong> {data.advisor_override_reason}</p>
+                                ) : isLowConfidence ? (
+                                  <p><strong>Note:</strong> Finalized despite low AI confidence score ({confidenceScore.toFixed(0)}%).</p>
+                                ) : null}
+                              </div>
+                            )}
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-left sm:text-right shrink-0">
                           <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Finalized On</p>
                           <p className="text-sm font-bold text-emerald-900">{new Date(data.finalized_at).toLocaleDateString()}</p>
                         </div>

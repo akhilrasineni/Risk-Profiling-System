@@ -3,6 +3,63 @@ import { supabase } from '../../db/supabase.ts';
 
 const router = Router();
 
+// Fetch a specific questionnaire by ID, including questions and options
+router.get("/id/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`[API] Fetching questionnaire ID: ${id}`);
+
+    // 1. Fetch the questionnaire
+    const { data: questionnaire, error: qError } = await supabase
+      .from('risk_questionnaires')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (qError || !questionnaire) {
+      return res.status(404).json({ status: "error", message: "Questionnaire not found" });
+    }
+
+    // 2. Fetch all related questions ordered by order_number
+    const { data: questions, error: questionsError } = await supabase
+      .from('risk_questions')
+      .select('*')
+      .eq('questionnaire_id', questionnaire.id)
+      .order('order_number', { ascending: true });
+
+    if (questionsError) throw questionsError;
+
+    // 3. Fetch all options for these questions
+    const questionIds = questions?.map(q => q.id) || [];
+    let options: any[] = [];
+    
+    if (questionIds.length > 0) {
+      const { data: opts, error: optionsError } = await supabase
+        .from('risk_answer_options')
+        .select('*')
+        .in('question_id', questionIds)
+        .order('order_number', { ascending: true });
+        
+      if (optionsError) throw optionsError;
+      options = opts || [];
+    }
+
+    // 4. Assemble the nested structure
+    const fullQuestionnaire = {
+      ...questionnaire,
+      questions: questions?.map(q => ({
+        ...q,
+        options: options.filter(o => o.question_id === q.id)
+      })) || []
+    };
+
+    res.json({ status: "ok", data: fullQuestionnaire });
+  } catch (error: any) {
+    console.error("Error fetching questionnaire by ID:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 // Fetch a specific questionnaire by version, including questions and options
 router.get("/:version", async (req, res) => {
   try {
@@ -55,7 +112,7 @@ router.get("/:version", async (req, res) => {
     }
 
     // 3. Fetch all answer options for these questions
-    const questionIds = questions.map((q: any) => q.id);
+    const questionIds = (questions || []).map((q: any) => q.id);
     console.log(`[API] Fetching options for ${questionIds.length} questions...`);
     
     let options: any[] = [];
@@ -77,7 +134,7 @@ router.get("/:version", async (req, res) => {
     }
 
     // 4. Assemble the final nested object
-    const assembledQuestions = questions.map((q: any) => ({
+    const assembledQuestions = (questions || []).map((q: any) => ({
       ...q,
       options: options.filter((o: any) => o.question_id === q.id)
     }));
@@ -117,7 +174,7 @@ router.post("/submit", async (req, res) => {
 
     if (qError || !questions) throw new Error("Failed to fetch questions for scoring");
 
-    const questionIds = questions.map(q => q.id);
+    const questionIds = (questions || []).map(q => q.id);
     const { data: options, error: oError } = await supabase
       .from('risk_answer_options')
       .select('*')
