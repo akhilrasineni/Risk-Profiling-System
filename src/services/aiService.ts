@@ -1,11 +1,42 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Client, RiskQuestion, RiskQuestionnaire, AIModel } from "../types";
+import { MODEL_FALLBACK_ORDER } from "../constants/aiModels";
+
+type ModelChangeCallback = (model: AIModel) => void;
 
 export class AIService {
   private currentModel: AIModel = 'gemini-3-flash-preview';
+  private listeners: ModelChangeCallback[] = [];
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('ai_current_model');
+      if (saved && MODEL_FALLBACK_ORDER.includes(saved as AIModel)) {
+        this.currentModel = saved as AIModel;
+      }
+    }
+  }
+
+  public subscribe(callback: ModelChangeCallback) {
+    this.listeners.push(callback);
+  }
+
+  public unsubscribe(callback: ModelChangeCallback) {
+    this.listeners = this.listeners.filter(l => l !== callback);
+  }
+
+  private notifyListeners() {
+    this.listeners.forEach(l => l(this.currentModel));
+  }
 
   public setModel(model: AIModel) {
-    this.currentModel = model;
+    if (this.currentModel !== model) {
+      this.currentModel = model;
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('ai_current_model', model);
+      }
+      this.notifyListeners();
+    }
   }
 
   public getModel(): AIModel {
@@ -21,27 +52,72 @@ export class AIService {
     return new GoogleGenAI({ apiKey });
   }
 
-  private async withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
-    try {
-      return await fn();
-    } catch (error: any) {
-      const isRetryable = 
-        error.message?.includes("503") || 
-        error.message?.includes("500") ||
-        error.message?.includes("xhr error") ||
-        error.message?.includes("high demand") || 
-        error.message?.includes("UNAVAILABLE") ||
-        error.message?.includes("fetch failed") ||
-        error.message?.includes("Timeout") ||
-        (error.message?.includes("429") && !error.message?.toLowerCase().includes("quota"));
-
-      if (retries > 0 && isRetryable) {
-        console.warn(`Gemini API error (retryable), retrying in ${delay}ms... (${retries} retries left)`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return this.withRetry(fn, retries - 1, delay * 2);
-      }
-      throw error;
+  private async executeWithFallback<T>(
+    operation: (model: AIModel) => Promise<T>,
+    startModel?: AIModel
+  ): Promise<T> {
+    // If startModel is provided (e.g. from UI override), use it. 
+    // Otherwise use the current persistent model.
+    const initialModel = startModel || this.currentModel;
+    let startIndex = MODEL_FALLBACK_ORDER.indexOf(initialModel);
+    
+    // If the requested model isn't in our fallback list, default to the start
+    if (startIndex === -1) {
+      startIndex = 0;
     }
+
+    let lastError: any;
+
+    for (let i = startIndex; i < MODEL_FALLBACK_ORDER.length; i++) {
+      const modelToTry = MODEL_FALLBACK_ORDER[i];
+      try {
+        if (i > startIndex) {
+          console.log(`Falling back to model: ${modelToTry}`);
+        }
+        
+        const result = await operation(modelToTry);
+        
+        // If we successfully executed with a model that is different from our current default,
+        // update the default so we stick with the working model.
+        // We only do this if we were using the default flow (no explicit startModel override)
+        // OR if we fell back from the override.
+        if (modelToTry !== this.currentModel) {
+             console.log(`Updating default AI model to ${modelToTry} (stable)`);
+             this.setModel(modelToTry);
+        }
+
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        
+        // Check if error is recoverable via model switch (e.g. quota, overload, 500, 404 model not found)
+        const isRecoverable = 
+          error.message?.includes("429") || 
+          error.message?.toLowerCase().includes("quota") || 
+          error.message?.includes("RESOURCE_EXHAUSTED") ||
+          error.message?.includes("503") || 
+          error.message?.includes("500") ||
+          error.message?.includes("overloaded") ||
+          error.message?.includes("xhr error") ||
+          error.message?.includes("fetch failed") ||
+          error.message?.includes("404") ||
+          error.message?.includes("NOT_FOUND");
+
+        if (!isRecoverable) {
+          throw error; // Don't fallback for logic errors (400, etc)
+        }
+
+        // If this was the last model, throw the error
+        if (i === MODEL_FALLBACK_ORDER.length - 1) {
+          console.error("All AI models failed. Last error:", error);
+          throw error;
+        }
+        
+        console.warn(`Model ${modelToTry} failed: ${error.message}. Switching to next model...`);
+      }
+    }
+    
+    throw lastError || new Error("All models failed");
   }
 
   /**
@@ -53,7 +129,6 @@ export class AIService {
     answers: Record<string, string>,
     modelOverride?: AIModel
   ) {
-    const model = modelOverride || this.currentModel;
     const clientContext = `Client financial context: Annual Income: ${client.annual_income}, Net Worth: ${client.net_worth}, Tax Bracket: ${client.tax_bracket}%, Date of Birth: ${client.dob}.`;
     
     const responsesText = questionnaire.questions.map(q => {
@@ -77,13 +152,16 @@ export class AIService {
     `;
 
     const ai = this.getClient();
-    const result = await this.withRetry(() => ai.models.generateContent({
-      model,
-      contents: [{ parts: [{ text: prompt }] }],
-      config: { 
-        responseMimeType: "application/json"
-      }
-    }));
+    
+    const result = await this.executeWithFallback(async (model) => {
+      return ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: { 
+          responseMimeType: "application/json"
+        }
+      });
+    }, modelOverride);
 
     const aiResponse = result.text || "{}";
     return JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
@@ -97,7 +175,6 @@ export class AIService {
     responses: any[],
     modelOverride?: AIModel
   ) {
-    const model = modelOverride || this.currentModel;
     const responsesText = responses.map((r: any) => {
       return `- ${r.risk_questions?.question_text || r.question_text || 'Question'}: ${r.risk_answer_options?.option_text || r.option_text || 'Option'} (Weight: ${r.score_given || 'N/A'})`;
     }).join('\n');
@@ -126,26 +203,29 @@ export class AIService {
     `;
 
     const ai = this.getClient();
-    const result = await this.withRetry(() => ai.models.generateContent({
-      model,
-      contents: [{ parts: [{ text: prompt }] }],
-      config: { 
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            consistency_score: { type: Type.NUMBER },
-            stability_flag: { type: Type.STRING, description: "Stable | Slightly Inconsistent | Highly Conflicted" },
-            contradictions_detected: { 
-              type: Type.ARRAY, 
-              items: { type: Type.STRING } 
+    
+    const result = await this.executeWithFallback(async (model) => {
+      return ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              consistency_score: { type: Type.NUMBER },
+              stability_flag: { type: Type.STRING, description: "Stable | Slightly Inconsistent | Highly Conflicted" },
+              contradictions_detected: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING } 
+              },
+              explanation: { type: Type.STRING, description: "A concise markdown-formatted summary of the reasoning, highlighting key findings in bold." }
             },
-            explanation: { type: Type.STRING, description: "A concise markdown-formatted summary of the reasoning, highlighting key findings in bold." }
-          },
-          required: ["consistency_score", "stability_flag", "contradictions_detected", "explanation"]
+            required: ["consistency_score", "stability_flag", "contradictions_detected", "explanation"]
+          }
         }
-      }
-    }));
+      });
+    }, modelOverride);
 
     const aiResponse = result.text || "{}";
     try {
@@ -179,7 +259,6 @@ export class AIService {
     responses: any[],
     modelOverride?: AIModel
   ) {
-    const model = modelOverride || this.currentModel;
     const responsesText = responses.map((r: any) => {
       return `- ${r.risk_questions?.question_text || r.question_text || 'Question'}: ${r.risk_answer_options?.option_text || r.option_text || 'Option'}`;
     }).join('\n');
@@ -215,31 +294,34 @@ export class AIService {
     `;
 
     const ai = this.getClient();
-    const result = await this.withRetry(() => ai.models.generateContent({
-      model,
-      contents: [{ parts: [{ text: prompt }] }],
-      config: { 
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            probabilities: {
-              type: Type.OBJECT,
-              properties: {
-                Conservative: { type: Type.NUMBER },
-                Moderate: { type: Type.NUMBER },
-                Aggressive: { type: Type.NUMBER }
+    
+    const result = await this.executeWithFallback(async (model) => {
+      return ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              probabilities: {
+                type: Type.OBJECT,
+                properties: {
+                  Conservative: { type: Type.NUMBER },
+                  Moderate: { type: Type.NUMBER },
+                  Aggressive: { type: Type.NUMBER }
+                },
+                required: ["Conservative", "Moderate", "Aggressive"]
               },
-              required: ["Conservative", "Moderate", "Aggressive"]
+              predicted_risk_band: { type: Type.STRING },
+              confidence_level: { type: Type.NUMBER },
+              explanation: { type: Type.STRING }
             },
-            predicted_risk_band: { type: Type.STRING },
-            confidence_level: { type: Type.NUMBER },
-            explanation: { type: Type.STRING }
-          },
-          required: ["probabilities", "predicted_risk_band", "confidence_level", "explanation"]
+            required: ["probabilities", "predicted_risk_band", "confidence_level", "explanation"]
+          }
         }
-      }
-    }));
+      });
+    }, modelOverride);
 
     const aiResponse = result.text || "{}";
     try {
@@ -266,7 +348,6 @@ export class AIService {
     responses: any[],
     modelOverride?: AIModel
   ) {
-    const model = modelOverride || this.currentModel;
     const responsesText = responses.map((r: any) => {
       return `- ${r.risk_questions?.question_text || r.question_text || 'Question'}: ${r.risk_answer_options?.option_text || r.option_text || 'Option'}`;
     }).join('\n');
@@ -301,24 +382,27 @@ export class AIService {
     `;
 
     const ai = this.getClient();
-    const result = await this.withRetry(() => ai.models.generateContent({
-      model,
-      contents: [{ parts: [{ text: prompt }] }],
-      config: { 
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            overconfidence: { type: Type.STRING, description: "Low | Medium | High" },
-            loss_aversion: { type: Type.STRING, description: "Low | Medium | High" },
-            unrealistic_expectation: { type: Type.STRING, description: "Low | Medium | High" },
-            recency_bias: { type: Type.STRING, description: "Low | Medium | High" },
-            dominant_behavioral_pattern: { type: Type.STRING }
-          },
-          required: ["overconfidence", "loss_aversion", "unrealistic_expectation", "recency_bias", "dominant_behavioral_pattern"]
+    
+    const result = await this.executeWithFallback(async (model) => {
+      return ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              overconfidence: { type: Type.STRING, description: "Low | Medium | High" },
+              loss_aversion: { type: Type.STRING, description: "Low | Medium | High" },
+              unrealistic_expectation: { type: Type.STRING, description: "Low | Medium | High" },
+              recency_bias: { type: Type.STRING, description: "Low | Medium | High" },
+              dominant_behavioral_pattern: { type: Type.STRING }
+            },
+            required: ["overconfidence", "loss_aversion", "unrealistic_expectation", "recency_bias", "dominant_behavioral_pattern"]
+          }
         }
-      }
-    }));
+      });
+    }, modelOverride);
 
     const aiResponse = result.text || "{}";
     try {
@@ -347,7 +431,6 @@ export class AIService {
     responses: any[],
     modelOverride?: AIModel
   ) {
-    const model = modelOverride || this.currentModel;
     const responsesText = responses.map((r: any) => {
       return `- ${r.risk_questions?.question_text || r.question_text || 'Question'}: ${r.risk_answer_options?.option_text || r.option_text || 'Option'}`;
     }).join('\n');
@@ -366,9 +449,7 @@ export class AIService {
 
       Your task:
       1. Calculate Risk Capacity Score (0–100): Financial ability to take risk.
-         Inputs to consider: % of net worth invested, emergency fund coverage, income stability, withdrawal rate, time horizon.
       2. Calculate Risk Tolerance Score (0–100): Emotional comfort with risk.
-         Inputs to consider: Reaction to 20% drop, reaction to 2-year market decline, volatility comfort level, years of experience, largest temporary loss experienced.
       3. Final Risk Score = Minimum of the two.
       4. Classify final risk band:
          - Conservative (0–35)
@@ -386,24 +467,27 @@ export class AIService {
     `;
 
     const ai = this.getClient();
-    const result = await this.withRetry(() => ai.models.generateContent({
-      model,
-      contents: [{ parts: [{ text: prompt }] }],
-      config: { 
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            capacity_score: { type: Type.NUMBER },
-            tolerance_score: { type: Type.NUMBER },
-            final_risk_score: { type: Type.NUMBER },
-            risk_band: { type: Type.STRING, description: "Conservative | Moderate | Aggressive" },
-            explanation: { type: Type.STRING }
-          },
-          required: ["capacity_score", "tolerance_score", "final_risk_score", "risk_band", "explanation"]
+    
+    const result = await this.executeWithFallback(async (model) => {
+      return ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              capacity_score: { type: Type.NUMBER },
+              tolerance_score: { type: Type.NUMBER },
+              final_risk_score: { type: Type.NUMBER },
+              risk_band: { type: Type.STRING, description: "Conservative | Moderate | Aggressive" },
+              explanation: { type: Type.STRING }
+            },
+            required: ["capacity_score", "tolerance_score", "final_risk_score", "risk_band", "explanation"]
+          }
         }
-      }
-    }));
+      });
+    }, modelOverride);
 
     const aiResponse = result.text || "{}";
     try {
@@ -439,7 +523,6 @@ export class AIService {
     availableAssetClasses: string[],
     modelOverride?: AIModel
   ) {
-    const model = modelOverride || this.currentModel;
     const prompt = `
       Generate a comprehensive Investment Policy Statement (IPS) for a client with the following profile:
       
@@ -486,13 +569,16 @@ export class AIService {
     `;
 
     const ai = this.getClient();
-    const result = await this.withRetry(() => ai.models.generateContent({
-      model,
-      contents: [{ parts: [{ text: prompt }] }],
-      config: { 
-        responseMimeType: "application/json"
-      }
-    }));
+    
+    const result = await this.executeWithFallback(async (model) => {
+      return ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: { 
+          responseMimeType: "application/json"
+        }
+      });
+    }, modelOverride);
 
     const aiResponse = result.text || "{}";
     return JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
@@ -505,7 +591,6 @@ export class AIService {
     currentHoldings: any[],
     modelOverride?: AIModel
   ) {
-    const model = modelOverride || this.currentModel;
     const holdingsText = currentHoldings.map(h => 
       `- ${h.security?.security_name} (${h.security?.ticker}) [${h.security?.asset_class}]: ${h.allocated_percent.toFixed(2)}%`
     ).join('\n');
@@ -552,34 +637,37 @@ export class AIService {
     `;
 
     const ai = this.getClient();
-    const result = await this.withRetry(() => ai.models.generateContent({
-      model,
-      contents: [{ parts: [{ text: prompt }] }],
-      config: { 
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            rebalance_summary: { type: Type.STRING },
-            suggestions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  security_name: { type: Type.STRING },
-                  ticker: { type: Type.STRING },
-                  current_allocation: { type: Type.NUMBER },
-                  suggested_allocation: { type: Type.NUMBER },
-                  action: { type: Type.STRING }
-                },
-                required: ["security_name", "ticker", "current_allocation", "suggested_allocation", "action"]
+    
+    const result = await this.executeWithFallback(async (model) => {
+      return ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              rebalance_summary: { type: Type.STRING },
+              suggestions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    security_name: { type: Type.STRING },
+                    ticker: { type: Type.STRING },
+                    current_allocation: { type: Type.NUMBER },
+                    suggested_allocation: { type: Type.NUMBER },
+                    action: { type: Type.STRING }
+                  },
+                  required: ["security_name", "ticker", "current_allocation", "suggested_allocation", "action"]
+                }
               }
-            }
-          },
-          required: ["rebalance_summary", "suggestions"]
+            },
+            required: ["rebalance_summary", "suggestions"]
+          }
         }
-      }
-    }));
+      });
+    }, modelOverride);
 
     const aiResponse = result.text || "{}";
     try {

@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { AlertCircle, Loader2, X, ShieldCheck, Activity, BrainCircuit, Search, Check, ClipboardList, FileText, User, Info, ChevronDown, Sparkles, TrendingUp, Heart, Target, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { Client, IPSDocument, TargetAllocation } from '../types';
+import { Client, IPSDocument, TargetAllocation, AIModel } from '../types';
 import IPSEditor from './IPSEditor';
 import PortfolioEditor from './PortfolioEditor';
 import { aiService } from '../services/aiService';
 import { ALLOCATION_MODELS, RiskCategory } from '../constants/allocationModels';
 import Tooltip from './Tooltip';
+import AIModelSelector from './AIModelSelector';
+import { useAIModel } from '../hooks/useAIModel';
 
 const AIErrorDisplay = ({ error, onRetry }: { error: string, onRetry?: () => void }) => {
   let title = "Analysis Unavailable";
@@ -111,6 +113,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   const [portfolio, setPortfolio] = useState<any>(null);
   const [buildingPortfolio, setBuildingPortfolio] = useState(false);
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
+  const { model: selectedModel, updateModel: setSelectedModel } = useAIModel();
 
 
   const handleAnalyze = async (assessmentData?: any) => {
@@ -131,7 +134,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       // Call AI Service directly from frontend
       const result = await aiService.analyzeInconsistencies(
         targetData.risk_category,
-        targetData.responses
+        targetData.responses,
+        selectedModel
       );
       setAnalysis(result);
 
@@ -169,7 +173,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     try {
       const result = await aiService.analyzeDualScoring(
         client,
-        targetData.responses
+        targetData.responses,
+        selectedModel
       );
       setDualScoring(result);
 
@@ -206,7 +211,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     setShowBiases(true);
     try {
       const result = await aiService.analyzeBehavioralBiases(
-        targetData.responses
+        targetData.responses,
+        selectedModel
       );
       setBehavioralBiases(result);
 
@@ -243,7 +249,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     setShowClassification(true);
     try {
       const result = await aiService.analyzeRiskProbabilities(
-        targetData.responses
+        targetData.responses,
+        selectedModel
       );
       setRiskClassification(result);
 
@@ -308,15 +315,6 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         setError(err.message || 'Network error');
       } finally {
         setLoading(false);
-      }
-
-      // Run only the first 2 AI models on load to reduce stress
-      if (fetchedProfileData) {
-        // Batch 1: Consistency & Dual Scoring
-        await Promise.all([
-          handleAnalyze(fetchedProfileData),
-          handleDualScoring(fetchedProfileData)
-        ]);
       }
     };
     fetchData();
@@ -428,7 +426,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         "None",
         {},
         staticAllocations,
-        availableAssetClasses
+        availableAssetClasses,
+        selectedModel
       );
 
       // 4. Save to Backend
@@ -579,9 +578,18 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
             </div>
             <p className="text-sm text-slate-500 font-medium">{client.first_name} {client.last_name}</p>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-900 rounded-lg transition-colors">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="hidden md:block">
+              <AIModelSelector
+                selectedModel={selectedModel}
+                onSelectModel={setSelectedModel}
+                className="w-56"
+              />
+            </div>
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-900 rounded-lg transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -1759,7 +1767,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                       <p className="text-slate-500 max-w-md mb-8">
                         {isEligibleForIPS 
                           ? "The risk profile is finalized and ready. Generate a draft Investment Policy Statement to get started."
-                          : "You must finalize the risk profile with a high enough confidence score before generating an IPS."}
+                          : `You must finalize the risk profile with a high enough confidence score (${(data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score).toFixed(0)}% < 65%) before generating an IPS.`}
                       </p>
                       
                       {isEligibleForIPS && (

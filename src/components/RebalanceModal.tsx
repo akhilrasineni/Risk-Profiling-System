@@ -2,9 +2,11 @@ import { useState, useMemo } from 'react';
 import { Loader2, BrainCircuit, X, TrendingUp, Wallet, Trash2, Plus, BarChart2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { motion } from 'framer-motion';
-import { Portfolio, PortfolioHolding, RebalanceHolding } from '../types';
+import { Portfolio, PortfolioHolding, RebalanceHolding, AIModel } from '../types';
 import { aiService } from '../services/aiService';
 import Tooltip from './Tooltip';
+import AIModelSelector from './AIModelSelector';
+import { useAIModel } from '../hooks/useAIModel';
 
 interface RebalanceModalProps {
   portfolio: Portfolio;
@@ -20,8 +22,10 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
   const [loadingAi, setLoadingAi] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const { model: selectedModel, updateModel: setSelectedModel } = useAIModel();
 
   const totalPortfolioValue = portfolio.total_investment_amount + (portfolio.cash_balance || 0);
+
 
   const chartData = useMemo(() => {
     return holdings.map(h => ({
@@ -37,7 +41,7 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
     setError(null);
     try {
       const ips = Array.isArray(portfolio.ips) ? portfolio.ips[0] : portfolio.ips;
-      const result = await aiService.suggestRebalanceActions(ips, ips?.target_allocations || [], securities, holdings);
+      const result = await aiService.suggestRebalanceActions(ips, ips?.target_allocations || [], securities, holdings, selectedModel);
       setAiSuggestions(result);
 
       if (result && Array.isArray(result.suggestions)) {
@@ -231,14 +235,21 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
                   </div>
                 </div>
               </Tooltip>
-              <button 
-                onClick={handleGenerateAISuggestions}
-                disabled={loadingAi}
-                className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
-              >
-                {loadingAi ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
-                {loadingAi ? 'Analyzing Portfolio...' : 'Generate Suggestions'}
-              </button>
+              <div className="flex items-center gap-3">
+                <AIModelSelector
+                  selectedModel={selectedModel}
+                  onSelectModel={setSelectedModel}
+                  className="w-48"
+                />
+                <button 
+                  onClick={handleGenerateAISuggestions}
+                  disabled={loadingAi}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                >
+                  {loadingAi ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+                  {loadingAi ? 'Analyzing Portfolio...' : 'Generate Suggestions'}
+                </button>
+              </div>
             </div>
             {aiSuggestions && (
               <div className='text-xs text-blue-700 bg-white/50 p-3 rounded-lg space-y-3'>

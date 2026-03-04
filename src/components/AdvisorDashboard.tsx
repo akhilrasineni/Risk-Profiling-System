@@ -5,6 +5,8 @@ import { Client, UserSession, AIModel } from '../types';
 import AddClientModal from './AddClientModal';
 import RiskProfileModal from './RiskProfileModal';
 import { aiService } from '../services/aiService';
+import AIModelSelector from './AIModelSelector';
+import { useAIModel } from '../hooks/useAIModel';
 
 export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserSession, onLogout: () => void }) {
   const [clients, setClients] = useState<Client[]>([]);
@@ -13,17 +15,12 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewingProfileFor, setViewingProfileFor] = useState<Client | null>(null);
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
-  const [selectedModel, setSelectedModel] = useState<AIModel>(aiService.getModel());
+  const { model: selectedModel, updateModel: setSelectedModel } = useAIModel();
   const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     fetchClients();
   }, [advisor.id]);
-
-  const handleModelChange = (model: AIModel) => {
-    setSelectedModel(model);
-    aiService.setModel(model);
-  };
 
   const fetchClients = async () => {
     try {
@@ -93,16 +90,13 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
             <h1 className="font-display font-bold text-xl text-slate-900 tracking-tight">Advisor Portal</h1>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg border border-slate-200">
+            <div className="flex items-center gap-2">
               <BrainCircuit className="w-4 h-4 text-blue-600" />
-              <select 
-                value={selectedModel}
-                onChange={(e) => handleModelChange(e.target.value as AIModel)}
-                className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
-              >
-                <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
-                <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
-              </select>
+              <AIModelSelector 
+                selectedModel={selectedModel} 
+                onSelectModel={setSelectedModel} 
+                className="w-56" 
+              />
             </div>
             <span className="text-sm text-slate-500 font-medium">Welcome, {advisor.name}</span>
             <button onClick={onLogout} className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors" title="Sign Out">

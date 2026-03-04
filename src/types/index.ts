@@ -1,4 +1,9 @@
-export type AIModel = 'gemini-3-flash-preview' | 'gemini-3.1-pro-preview';
+export type AIModel = 
+  | 'gemini-3-flash-preview' 
+  | 'gemini-3.1-pro-preview' 
+  | 'gemini-2.5-flash-latest' 
+  | 'gemini-2.0-flash-exp' 
+  | 'gemini-1.5-flash';
 
 export interface Advisor {
   id: string;
@@ -73,6 +78,10 @@ export interface RiskAssessment {
   advisor_override_category?: string;
   advisor_override_reason?: string;
   created_at: string;
+  behavioral_bias_analysis?: any;
+  risk_probability_analysis?: any;
+  dual_scoring_analysis?: any;
+  consistency_analysis?: any;
 }
 
 export interface RiskAssessmentResponse {
