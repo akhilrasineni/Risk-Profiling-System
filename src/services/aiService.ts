@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { Groq } from 'groq-sdk';
 import { Client, RiskQuestion, RiskQuestionnaire, AIModel } from "../types";
-import { MODEL_FALLBACK_ORDER } from "../constants/aiModels";
+import { AVAILABLE_MODELS } from "../constants/aiModels";
 
 type ModelChangeCallback = (model: AIModel) => void;
 
@@ -11,7 +12,7 @@ export class AIService {
   constructor() {
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('ai_current_model');
-      if (saved && MODEL_FALLBACK_ORDER.includes(saved as AIModel)) {
+      if (saved && AVAILABLE_MODELS.includes(saved as AIModel)) {
         this.currentModel = saved as AIModel;
       }
     }
@@ -52,72 +53,89 @@ export class AIService {
     return new GoogleGenAI({ apiKey });
   }
 
-  private async executeWithFallback<T>(
-    operation: (model: AIModel) => Promise<T>,
-    startModel?: AIModel
-  ): Promise<T> {
-    // If startModel is provided (e.g. from UI override), use it. 
-    // Otherwise use the current persistent model.
-    const initialModel = startModel || this.currentModel;
-    let startIndex = MODEL_FALLBACK_ORDER.indexOf(initialModel);
-    
-    // If the requested model isn't in our fallback list, default to the start
-    if (startIndex === -1) {
-      startIndex = 0;
+  private getGroqClient(): Groq {
+    let apiKey = '';
+    try {
+      apiKey = process.env.GROQ_API_KEY || '';
+    } catch (e) {
+      // Ignore
     }
-
-    let lastError: any;
-
-    for (let i = startIndex; i < MODEL_FALLBACK_ORDER.length; i++) {
-      const modelToTry = MODEL_FALLBACK_ORDER[i];
+    
+    if (!apiKey) {
       try {
-        if (i > startIndex) {
-          console.log(`Falling back to model: ${modelToTry}`);
-        }
-        
-        const result = await operation(modelToTry);
-        
-        // If we successfully executed with a model that is different from our current default,
-        // update the default so we stick with the working model.
-        // We only do this if we were using the default flow (no explicit startModel override)
-        // OR if we fell back from the override.
-        if (modelToTry !== this.currentModel) {
-             console.log(`Updating default AI model to ${modelToTry} (stable)`);
-             this.setModel(modelToTry);
-        }
-
-        return result;
-      } catch (error: any) {
-        lastError = error;
-        
-        // Check if error is recoverable via model switch (e.g. quota, overload, 500, 404 model not found)
-        const isRecoverable = 
-          error.message?.includes("429") || 
-          error.message?.toLowerCase().includes("quota") || 
-          error.message?.includes("RESOURCE_EXHAUSTED") ||
-          error.message?.includes("503") || 
-          error.message?.includes("500") ||
-          error.message?.includes("overloaded") ||
-          error.message?.includes("xhr error") ||
-          error.message?.includes("fetch failed") ||
-          error.message?.includes("404") ||
-          error.message?.includes("NOT_FOUND");
-
-        if (!isRecoverable) {
-          throw error; // Don't fallback for logic errors (400, etc)
-        }
-
-        // If this was the last model, throw the error
-        if (i === MODEL_FALLBACK_ORDER.length - 1) {
-          console.error("All AI models failed. Last error:", error);
-          throw error;
-        }
-        
-        console.warn(`Model ${modelToTry} failed: ${error.message}. Switching to next model...`);
+        // @ts-ignore
+        apiKey = import.meta.env.VITE_GROQ_API_KEY || '';
+      } catch (e) {
+        // Ignore
       }
     }
-    
-    throw lastError || new Error("All models failed");
+
+    if (!apiKey) {
+      console.error("CRITICAL: Missing GROQ_API_KEY");
+      throw new Error("GROQ_API_KEY not configured");
+    }
+    return new Groq({ apiKey, dangerouslyAllowBrowser: true });
+  }
+
+  private isGroqModel(model: AIModel): boolean {
+    return !model.startsWith('gemini');
+  }
+
+  private async generateContent(
+    prompt: string,
+    options: { responseMimeType?: string, responseSchema?: any } = {},
+    startModel?: AIModel
+  ): Promise<string> {
+    const modelToTry = startModel || this.currentModel;
+
+    try {
+      if (this.isGroqModel(modelToTry)) {
+        const groq = this.getGroqClient();
+        const messages: any[] = [{ role: 'user', content: prompt }];
+        
+        // If JSON is requested, ensure the prompt mentions JSON
+        let finalPrompt = prompt;
+        if (options.responseMimeType === 'application/json' && !finalPrompt.toLowerCase().includes('json')) {
+          finalPrompt += '\n\nPlease respond in JSON format.';
+        }
+        messages[0].content = finalPrompt;
+
+        const completion = await groq.chat.completions.create({
+          messages,
+          model: modelToTry,
+          response_format: options.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined,
+        });
+
+        return completion.choices[0]?.message?.content || "{}";
+      } else {
+        const ai = this.getClient();
+        const result = await ai.models.generateContent({
+          model: modelToTry,
+          contents: [{ parts: [{ text: prompt }] }],
+          config: {
+            responseMimeType: options.responseMimeType,
+            responseSchema: options.responseSchema,
+          }
+        });
+        return result.text || "{}";
+      }
+    } catch (error: any) {
+      console.error(`Model ${modelToTry} failed:`, error);
+      
+      // Provide a user-friendly error message
+      let errorMessage = "An error occurred during AI analysis.";
+      if (error.message?.includes("429") || error.message?.toLowerCase().includes("quota") || error.message?.includes("RESOURCE_EXHAUSTED")) {
+        errorMessage = "AI service quota exceeded. Please try again later.";
+      } else if (error.message?.includes("503") || error.message?.includes("500") || error.message?.includes("overloaded")) {
+        errorMessage = "AI service is currently overloaded or unavailable. Please try again later.";
+      } else if (error.message?.includes("404") || error.message?.includes("NOT_FOUND")) {
+        errorMessage = `AI model '${modelToTry}' is not available.`;
+      } else if (error.message) {
+        errorMessage = `AI Error: ${error.message}`;
+      }
+
+      throw new Error(errorMessage);
+    }
   }
 
   /**
@@ -151,19 +169,11 @@ export class AIService {
       4.  "response_stability" (integer 0-100): How "stable" the profile feels (e.g., does it feel like a real person's profile or random guesses).
     `;
 
-    const ai = this.getClient();
-    
-    const result = await this.executeWithFallback(async (model) => {
-      return ai.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { 
-          responseMimeType: "application/json"
-        }
-      });
-    }, modelOverride);
-
-    const aiResponse = result.text || "{}";
+    const aiResponse = await this.generateContent(
+      prompt,
+      { responseMimeType: "application/json" },
+      modelOverride
+    );
     return JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
   }
 
@@ -202,15 +212,11 @@ export class AIService {
       }
     `;
 
-    const ai = this.getClient();
-    
-    const result = await this.executeWithFallback(async (model) => {
-      return ai.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { 
-          responseMimeType: "application/json",
-          responseSchema: {
+    const aiResponse = await this.generateContent(
+      prompt,
+      {
+        responseMimeType: "application/json",
+        responseSchema: {
             type: Type.OBJECT,
             properties: {
               consistency_score: { type: Type.NUMBER },
@@ -223,11 +229,9 @@ export class AIService {
             },
             required: ["consistency_score", "stability_flag", "contradictions_detected", "explanation"]
           }
-        }
-      });
-    }, modelOverride);
-
-    const aiResponse = result.text || "{}";
+      },
+      modelOverride
+    );
     try {
       const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
       
@@ -293,15 +297,11 @@ export class AIService {
       }
     `;
 
-    const ai = this.getClient();
-    
-    const result = await this.executeWithFallback(async (model) => {
-      return ai.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { 
-          responseMimeType: "application/json",
-          responseSchema: {
+    const aiResponse = await this.generateContent(
+      prompt,
+      {
+        responseMimeType: "application/json",
+        responseSchema: {
             type: Type.OBJECT,
             properties: {
               probabilities: {
@@ -319,11 +319,9 @@ export class AIService {
             },
             required: ["probabilities", "predicted_risk_band", "confidence_level", "explanation"]
           }
-        }
-      });
-    }, modelOverride);
-
-    const aiResponse = result.text || "{}";
+      },
+      modelOverride
+    );
     try {
       const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
       if (parsed.explanation) {
@@ -381,15 +379,11 @@ export class AIService {
       }
     `;
 
-    const ai = this.getClient();
-    
-    const result = await this.executeWithFallback(async (model) => {
-      return ai.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { 
-          responseMimeType: "application/json",
-          responseSchema: {
+    const aiResponse = await this.generateContent(
+      prompt,
+      {
+        responseMimeType: "application/json",
+        responseSchema: {
             type: Type.OBJECT,
             properties: {
               overconfidence: { type: Type.STRING, description: "Low | Medium | High" },
@@ -400,11 +394,9 @@ export class AIService {
             },
             required: ["overconfidence", "loss_aversion", "unrealistic_expectation", "recency_bias", "dominant_behavioral_pattern"]
           }
-        }
-      });
-    }, modelOverride);
-
-    const aiResponse = result.text || "{}";
+      },
+      modelOverride
+    );
     try {
       const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
       if (parsed.dominant_behavioral_pattern) {
@@ -466,15 +458,11 @@ export class AIService {
       }
     `;
 
-    const ai = this.getClient();
-    
-    const result = await this.executeWithFallback(async (model) => {
-      return ai.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { 
-          responseMimeType: "application/json",
-          responseSchema: {
+    const aiResponse = await this.generateContent(
+      prompt,
+      {
+        responseMimeType: "application/json",
+        responseSchema: {
             type: Type.OBJECT,
             properties: {
               capacity_score: { type: Type.NUMBER },
@@ -485,11 +473,9 @@ export class AIService {
             },
             required: ["capacity_score", "tolerance_score", "final_risk_score", "risk_band", "explanation"]
           }
-        }
-      });
-    }, modelOverride);
-
-    const aiResponse = result.text || "{}";
+      },
+      modelOverride
+    );
     try {
       const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
       
@@ -568,19 +554,11 @@ export class AIService {
       Set lower and upper bands (e.g., +/- 5% or 10% of target) to allow for drift.
     `;
 
-    const ai = this.getClient();
-    
-    const result = await this.executeWithFallback(async (model) => {
-      return ai.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { 
-          responseMimeType: "application/json"
-        }
-      });
-    }, modelOverride);
-
-    const aiResponse = result.text || "{}";
+    const aiResponse = await this.generateContent(
+      prompt,
+      { responseMimeType: "application/json" },
+      modelOverride
+    );
     return JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
   }
 
@@ -636,15 +614,11 @@ export class AIService {
       IMPORTANT: Ensure the total of all "suggested_allocation" percentages sums to exactly 100.
     `;
 
-    const ai = this.getClient();
-    
-    const result = await this.executeWithFallback(async (model) => {
-      return ai.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { 
-          responseMimeType: "application/json",
-          responseSchema: {
+    const aiResponse = await this.generateContent(
+      prompt,
+      {
+        responseMimeType: "application/json",
+        responseSchema: {
             type: Type.OBJECT,
             properties: {
               rebalance_summary: { type: Type.STRING },
@@ -665,11 +639,9 @@ export class AIService {
             },
             required: ["rebalance_summary", "suggestions"]
           }
-        }
-      });
-    }, modelOverride);
-
-    const aiResponse = result.text || "{}";
+      },
+      modelOverride
+    );
     try {
       const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
       if (Array.isArray(parsed)) {

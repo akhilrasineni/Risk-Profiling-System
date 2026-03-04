@@ -1,9 +1,13 @@
 export type AIModel = 
   | 'gemini-3-flash-preview' 
-  | 'gemini-3.1-pro-preview' 
-  | 'gemini-2.5-flash-latest' 
-  | 'gemini-2.0-flash-exp' 
-  | 'gemini-1.5-flash';
+  | 'gemini-3.1-pro-preview'
+  | 'qwen/qwen3-32b'
+  | 'llama-3.1-8b-instant'
+  | 'llama-3.3-70b-versatile'
+  | 'meta-llama/llama-4-scout-17b-16e-instruct'
+  | 'moonshotai/kimi-k2-instruct-0905'
+  | 'groq/compound'
+  | 'groq/compound-mini';
 
 export interface Advisor {
   id: string;
@@ -96,22 +100,31 @@ export interface IPSDocument {
   id: string;
   client_id: string;
   risk_assessment_id: string;
+  version?: number;
+  rebalancing_band_percent?: number;
+  esg_preference?: boolean;
+  concentrated_position_flag?: boolean;
+  constraints_json?: any;
+  status: 'Draft' | 'Finalized' | 'Active';
+  advisor_signed_at?: string;
+  client_signed_at?: string;
+  created_at: string;
   risk_category: string;
   investment_objective: string;
   time_horizon_years: number;
-  liquidity_needs: number;
-  tax_considerations: number;
+  tax_considerations: number | string;
   rebalancing_frequency: string;
-  status: 'Draft' | 'Finalized' | 'Active';
-  created_at: string;
-  risk_assessments?: RiskAssessment;
-  rebalancing_strategy_description?: string;
+  liquidity_needs: number | string;
+  performance_benchmark?: string;
+  updated_at?: string;
   monitoring_review_description?: string;
+  rebalancing_strategy_description?: string;
   constraints_description?: string;
-  goals_description?: string;
   finalized_at?: string;
+  goals_description?: string;
   advisor_accepted_at?: string;
   client_accepted_at?: string;
+  risk_assessments?: RiskAssessment;
   clients?: {
     first_name: string;
     last_name: string;

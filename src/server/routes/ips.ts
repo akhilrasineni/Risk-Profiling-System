@@ -8,38 +8,89 @@ const router = Router();
 // Save Generated IPS
 router.post("/save", async (req, res) => {
   try {
-    const { client_id, risk_assessment_id, ips_data, target_allocations } = req.body;
+    const { client_id, risk_assessment_id, ips_data, target_allocations, existing_ips_id } = req.body;
 
     if (!client_id || !risk_assessment_id || !ips_data || !target_allocations) {
       return res.status(400).json({ status: "error", message: "Missing required fields" });
     }
 
-    // 1. Insert IPS Document
-    const { data: ips, error: ipsError } = await supabase
-      .from('ips_documents')
-      .insert({
-        client_id,
-        risk_assessment_id,
-        risk_category: ips_data.risk_category,
-        investment_objective: ips_data.investment_objective,
-        time_horizon_years: ips_data.time_horizon_years,
-        liquidity_needs: ips_data.liquidity_needs,
-        tax_considerations: ips_data.tax_considerations,
-        rebalancing_frequency: ips_data.rebalancing_frequency,
-        rebalancing_strategy_description: ips_data.rebalancing_strategy_description,
-        monitoring_review_description: ips_data.monitoring_review_description,
-        constraints_description: ips_data.constraints_description,
-        goals_description: ips_data.goals_description,
-        status: 'Draft'
-      })
-      .select()
-      .single();
+    let ipsIdToUse = null;
+    let newVersion = 1;
 
-    if (ipsError) throw ipsError;
+    if (existing_ips_id) {
+      // Fetch existing IPS
+      const { data: existingIps, error: fetchError } = await supabase
+        .from('ips_documents')
+        .select('*')
+        .eq('id', existing_ips_id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      if (existingIps.status === 'Draft') {
+        // Update existing draft
+        ipsIdToUse = existing_ips_id;
+        
+        const { error: updateError } = await supabase
+          .from('ips_documents')
+          .update({
+            risk_category: ips_data.risk_category,
+            investment_objective: ips_data.investment_objective,
+            time_horizon_years: ips_data.time_horizon_years,
+            liquidity_needs: ips_data.liquidity_needs,
+            tax_considerations: ips_data.tax_considerations,
+            rebalancing_frequency: ips_data.rebalancing_frequency,
+            rebalancing_strategy_description: ips_data.rebalancing_strategy_description,
+            monitoring_review_description: ips_data.monitoring_review_description,
+            constraints_description: ips_data.constraints_description,
+            goals_description: ips_data.goals_description,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing_ips_id);
+
+        if (updateError) throw updateError;
+
+        // Delete old allocations
+        await supabase
+          .from('target_allocations')
+          .delete()
+          .eq('ips_id', existing_ips_id);
+      } else {
+        // Create new version
+        newVersion = (existingIps.version || 1) + 1;
+      }
+    }
+
+    if (!ipsIdToUse) {
+      // 1. Insert IPS Document
+      const { data: ips, error: ipsError } = await supabase
+        .from('ips_documents')
+        .insert({
+          client_id,
+          risk_assessment_id,
+          version: newVersion,
+          risk_category: ips_data.risk_category,
+          investment_objective: ips_data.investment_objective,
+          time_horizon_years: ips_data.time_horizon_years,
+          liquidity_needs: ips_data.liquidity_needs,
+          tax_considerations: ips_data.tax_considerations,
+          rebalancing_frequency: ips_data.rebalancing_frequency,
+          rebalancing_strategy_description: ips_data.rebalancing_strategy_description,
+          monitoring_review_description: ips_data.monitoring_review_description,
+          constraints_description: ips_data.constraints_description,
+          goals_description: ips_data.goals_description,
+          status: 'Draft'
+        })
+        .select()
+        .single();
+
+      if (ipsError) throw ipsError;
+      ipsIdToUse = ips.id;
+    }
 
     // 2. Insert Target Allocations
     const allocationInserts = target_allocations.map((a: any) => ({
-      ips_id: ips.id,
+      ips_id: ipsIdToUse,
       asset_class: a.asset_class,
       target_percent: a.target_percent,
       lower_band: a.lower_band,
@@ -59,7 +110,7 @@ router.post("/save", async (req, res) => {
         *,
         target_allocations (*)
       `)
-      .eq('id', ips.id)
+      .eq('id', ipsIdToUse)
       .single();
 
     if (fetchError) throw fetchError;
@@ -67,6 +118,38 @@ router.post("/save", async (req, res) => {
     res.json({ status: "ok", data: fullIps });
   } catch (error: any) {
     console.error("Error saving IPS:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// Get all IPS versions for a client
+router.get("/client/:client_id/versions", async (req, res) => {
+  try {
+    const { client_id } = req.params;
+    const { data, error } = await supabase
+      .from('ips_documents')
+      .select(`
+        *,
+        target_allocations (*),
+        risk_assessments (*),
+        clients:client_id (
+          first_name,
+          last_name,
+          advisors:advisor_id (
+            full_name
+          )
+        )
+      `)
+      .eq('client_id', client_id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({ status: "ok", data: data || [] });
+  } catch (error: any) {
+    console.error("Error fetching IPS versions:", error);
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -228,6 +311,24 @@ router.put("/:id/accept", async (req, res) => {
     } else if (role === 'client' && currentIPS.advisor_accepted_at) {
       updates.status = 'Active';
       updates.finalized_at = timestamp;
+    }
+
+    // If becoming active, deactivate others for this client
+    if (updates.status === 'Active') {
+      const { data: ipsData } = await supabase
+        .from('ips_documents')
+        .select('client_id')
+        .eq('id', id)
+        .single();
+      
+      if (ipsData) {
+        await supabase
+          .from('ips_documents')
+          .update({ status: 'Finalized' })
+          .eq('client_id', ipsData.client_id)
+          .eq('status', 'Active')
+          .neq('id', id);
+      }
     }
 
     const { data: ips, error: ipsError } = await supabase

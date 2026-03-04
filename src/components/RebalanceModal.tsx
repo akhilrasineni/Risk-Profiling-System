@@ -251,6 +251,11 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
                 </button>
               </div>
             </div>
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
             {aiSuggestions && (
               <div className='text-xs text-blue-700 bg-white/50 p-3 rounded-lg space-y-3'>
                 <p className='font-semibold'>{aiSuggestions.rebalance_summary || 'Analysis complete.'}</p>

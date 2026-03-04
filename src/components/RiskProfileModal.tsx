@@ -112,18 +112,49 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   const [generatingIPS, setGeneratingIPS] = useState(false);
   const [ipsError, setIpsError] = useState<string | null>(null);
   const [ipsDocument, setIpsDocument] = useState<(IPSDocument & { target_allocations: TargetAllocation[] }) | null>(null);
+  const [ipsVersions, setIpsVersions] = useState<(IPSDocument & { target_allocations: TargetAllocation[] })[]>([]);
   const [portfolio, setPortfolio] = useState<any>(null);
   const [buildingPortfolio, setBuildingPortfolio] = useState(false);
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
   const { model: selectedModel, updateModel: setSelectedModel } = useAIModel();
 
+  useEffect(() => {
+    if (client) {
+      // Fetch IPS versions
+      fetch(`/api/ips/client/${client.id}/versions`)
+        .then(res => res.json())
+        .then(json => {
+          if (json.status === 'ok' && json.data && json.data.length > 0) {
+            setIpsVersions(json.data);
+            setIpsDocument(json.data[0]); // Latest version
+          } else {
+            setIpsVersions([]);
+            setIpsDocument(null);
+          }
+        })
+        .catch(err => console.error("Failed to fetch IPS versions", err));
+        
+      // Fetch portfolio
+      fetch(`/api/portfolios/client/${client.id}`)
+        .then(res => res.json())
+        .then(json => {
+          if (json.status === 'ok' && json.data) {
+            setPortfolio(json.data);
+          } else {
+            setPortfolio(null);
+          }
+        })
+        .catch(err => console.error("Failed to fetch portfolio", err));
+    }
+  }, [client]);
 
-  const handleAnalyze = async (assessmentData?: any) => {
+
+  const handleAnalyze = async (assessmentData?: any, force: boolean = false) => {
     const targetData = assessmentData || data;
     if (!targetData) return;
     
     // If we already have analysis in the data, use it
-    if (targetData.consistency_analysis && !analyzing) {
+    if (!force && targetData.consistency_analysis && !analyzing) {
       setAnalysis(targetData.consistency_analysis);
       setShowConsistency(true);
       return;
@@ -159,11 +190,11 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     }
   };
 
-  const handleDualScoring = async (assessmentData?: any) => {
+  const handleDualScoring = async (assessmentData?: any, force: boolean = false) => {
     const targetData = assessmentData || data;
     if (!targetData) return;
 
-    if (targetData.dual_scoring_analysis && !analyzingDual) {
+    if (!force && targetData.dual_scoring_analysis && !analyzingDual) {
       setDualScoring(targetData.dual_scoring_analysis);
       setShowDualScoring(true);
       return;
@@ -198,11 +229,11 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     }
   };
 
-  const handleBehavioralBiases = async (assessmentData?: any) => {
+  const handleBehavioralBiases = async (assessmentData?: any, force: boolean = false) => {
     const targetData = assessmentData || data;
     if (!targetData) return;
 
-    if (targetData.behavioral_bias_analysis && !analyzingBiases) {
+    if (!force && targetData.behavioral_bias_analysis && !analyzingBiases) {
       setBehavioralBiases(targetData.behavioral_bias_analysis);
       setShowBiases(true);
       return;
@@ -236,11 +267,11 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     }
   };
 
-  const handleRiskClassification = async (assessmentData?: any) => {
+  const handleRiskClassification = async (assessmentData?: any, force: boolean = false) => {
     const targetData = assessmentData || data;
     if (!targetData) return;
 
-    if (targetData.risk_probability_analysis && !analyzingClassification) {
+    if (!force && targetData.risk_probability_analysis && !analyzingClassification) {
       setRiskClassification(targetData.risk_probability_analysis);
       setShowClassification(true);
       return;
@@ -431,7 +462,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     }
   };
 
-  const handleGenerateIPS = async () => {
+  const handleGenerateIPS = async (existingIpsId?: string) => {
     if (!data) return;
     setGeneratingIPS(true);
     setIpsError(null);
@@ -498,6 +529,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         body: JSON.stringify({
           client_id: client.id,
           risk_assessment_id: data.id,
+          existing_ips_id: existingIpsId,
           ips_data: {
             risk_category: riskCategory,
             investment_objective: aiResponse.investment_objective,
@@ -523,6 +555,15 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       if (json.status === 'ok') {
         setIpsDocument(json.data);
         setActiveTab('ips');
+        // Refresh versions
+        fetch(`/api/ips/client/${client.id}/versions`)
+          .then(res => res.json())
+          .then(vJson => {
+            if (vJson.status === 'ok' && vJson.data) {
+              setIpsVersions(vJson.data);
+            }
+          })
+          .catch(err => console.error("Failed to fetch IPS versions", err));
       } else {
         setIpsError(json.message || 'Failed to save IPS');
       }
@@ -545,7 +586,9 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     
     const json = await res.json();
     if (res.ok && json.status === 'ok') {
-      setIpsDocument({ ...ipsDocument, ...json.data, target_allocations: updatedIps.allocations });
+      const newIps = { ...ipsDocument, ...json.data, target_allocations: updatedIps.allocations };
+      setIpsDocument(newIps);
+      setIpsVersions(prev => prev.map(v => v.id === newIps.id ? newIps : v));
     } else {
       throw new Error(json.message || 'Failed to update IPS');
     }
@@ -561,7 +604,9 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       });
       const data = await res.json();
       if (data.status === 'ok') {
-        setIpsDocument(prev => prev ? { ...prev, advisor_accepted_at: new Date().toISOString() } : null);
+        const newIps = { ...ipsDocument, advisor_accepted_at: new Date().toISOString() };
+        setIpsDocument(newIps);
+        setIpsVersions(prev => prev.map(v => v.id === newIps.id ? newIps : v));
       } else {
         throw new Error(data.message);
       }
@@ -918,7 +963,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDualScoring();
+                                handleDualScoring(undefined, true);
                               }}
                               className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
@@ -1119,7 +1164,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleAnalyze();
+                                handleAnalyze(undefined, true);
                               }}
                               className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
@@ -1159,7 +1204,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           {analysisError && !analyzing && (
                             <div className="mb-4 flex justify-end">
                               <button 
-                                onClick={() => handleAnalyze()}
+                                onClick={() => handleAnalyze(undefined, true)}
                                 className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-full uppercase tracking-wider hover:bg-slate-800 transition-all"
                               >
                                 Retry Scan
@@ -1304,7 +1349,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleBehavioralBiases();
+                                handleBehavioralBiases(undefined, true);
                               }}
                               className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
@@ -1435,7 +1480,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               role="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleRiskClassification();
+                                handleRiskClassification(undefined, true);
                               }}
                               className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
                             >
@@ -1817,11 +1862,27 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                   {ipsDocument ? (
                     <div className="space-y-6">
+                      {ipsError && (
+                        <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2">
+                          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                          <div>
+                            <h4 className="font-bold text-sm">IPS Generation Failed</h4>
+                            <p className="text-sm">{ipsError}</p>
+                          </div>
+                        </div>
+                      )}
                       <IPSEditor 
                         ips={ipsDocument} 
                         client={client} 
                         onSave={handleSaveIPS} 
                         onAccept={handleAcceptIPS}
+                        onRegenerate={() => handleGenerateIPS(ipsDocument.id)}
+                        ipsVersions={ipsVersions}
+                        onVersionSelect={(versionId) => {
+                          const selected = ipsVersions.find(v => v.id === versionId);
+                          if (selected) setIpsDocument(selected);
+                        }}
+                        generatingIPS={generatingIPS}
                         viewerRole="advisor"
                       />
                       
@@ -1883,7 +1944,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                       {isEligibleForIPS && (
                         <div className="flex flex-col items-center gap-4">
                           <button
-                            onClick={handleGenerateIPS}
+                            onClick={() => handleGenerateIPS()}
                             disabled={generatingIPS}
                             className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-blue-600/20"
                           >

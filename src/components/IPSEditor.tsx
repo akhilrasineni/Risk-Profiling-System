@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Save, Loader2, AlertCircle, Check, Edit2, X, FileText, BrainCircuit, Calendar, User, ShieldCheck, Target, TrendingUp, DollarSign, Scale, Printer, Download, Info } from 'lucide-react';
 import { IPSDocument, TargetAllocation, Client } from '../types';
 import { toPng } from 'html-to-image';
@@ -10,9 +10,13 @@ interface IPSEditorProps {
   onSave: (updatedIps: any) => Promise<void>;
   viewerRole?: 'advisor' | 'client';
   onAccept?: () => Promise<void>;
+  onRegenerate?: () => Promise<void>;
+  ipsVersions?: (IPSDocument & { target_allocations: TargetAllocation[] })[];
+  onVersionSelect?: (versionId: string) => void;
+  generatingIPS?: boolean;
 }
 
-export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor', onAccept }: IPSEditorProps) {
+export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor', onAccept, onRegenerate, ipsVersions = [], onVersionSelect, generatingIPS = false }: IPSEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     investment_objective: ips.investment_objective,
@@ -33,6 +37,22 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
   const [success, setSuccess] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
+  useEffect(() => {
+    setFormData({
+      investment_objective: ips.investment_objective,
+      time_horizon_years: ips.time_horizon_years,
+      liquidity_needs: ips.liquidity_needs,
+      tax_considerations: ips.tax_considerations,
+      rebalancing_frequency: ips.rebalancing_frequency,
+      rebalancing_strategy_description: ips.rebalancing_strategy_description,
+      monitoring_review_description: ips.monitoring_review_description,
+      constraints_description: ips.constraints_description,
+      goals_description: ips.goals_description,
+      status: ips.status
+    });
+    setAllocations(ips.target_allocations || []);
+  }, [ips]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -47,8 +67,28 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
     const newAllocations = [...allocations];
     newAllocations[index] = {
       ...newAllocations[index],
-      [field]: parseFloat(value)
+      [field]: field === 'asset_class' ? value : parseFloat(value) || 0
     };
+    setAllocations(newAllocations);
+  };
+
+  const handleAddAllocation = () => {
+    setAllocations([
+      ...allocations,
+      {
+        id: `new-${Date.now()}`,
+        ips_id: ips.id,
+        asset_class: 'New Asset Class',
+        target_percent: 0,
+        lower_band: 0,
+        upper_band: 0
+      }
+    ]);
+  };
+
+  const handleRemoveAllocation = (index: number) => {
+    const newAllocations = [...allocations];
+    newAllocations.splice(index, 1);
     setAllocations(newAllocations);
   };
 
@@ -184,7 +224,23 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Investment Policy Statement</h3>
-              <p className="text-xs text-slate-500">Version 1.0 • {new Date(ips.created_at).toLocaleDateString()}</p>
+              {ipsVersions.length > 1 ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <select
+                    value={ips.id}
+                    onChange={(e) => onVersionSelect && onVersionSelect(e.target.value)}
+                    className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    {ipsVersions.map(v => (
+                      <option key={v.id} value={v.id}>
+                        Version {v.version || 1} • {new Date(v.created_at).toLocaleDateString()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">Version {ips.version || 1} • {new Date(ips.created_at).toLocaleDateString()}</p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -205,6 +261,16 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
               {isGeneratingPDF ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               {isGeneratingPDF ? 'Generating PDF...' : 'Download PDF'}
             </button>
+            {viewerRole === 'advisor' && onRegenerate && (formData.status === 'Draft' || formData.status === 'Active') && (
+              <button
+                onClick={onRegenerate}
+                disabled={generatingIPS}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors shadow-sm disabled:opacity-50"
+              >
+                {generatingIPS ? <Loader2 className="w-4 h-4 animate-spin" /> : <BrainCircuit className="w-4 h-4" />}
+                {generatingIPS ? 'Regenerating...' : 'Regenerate'}
+              </button>
+            )}
             {viewerRole === 'advisor' && formData.status !== 'Active' && (
               <button
                 onClick={() => setIsEditing(true)}
@@ -645,9 +711,18 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
       <div>
         <div className="flex items-center justify-between mb-2">
           <h4 className="text-sm font-semibold text-slate-900">Target Asset Allocation</h4>
-          <span className={`text-xs font-mono font-medium ${Math.abs(totalTarget - 100) < 0.1 ? 'text-emerald-600' : 'text-red-500'}`}>
-            Total: {totalTarget.toFixed(1)}%
-          </span>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={handleAddAllocation}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              + Add Asset Class
+            </button>
+            <span className={`text-xs font-mono font-medium ${Math.abs(totalTarget - 100) < 0.1 ? 'text-emerald-600' : 'text-red-500'}`}>
+              Total: {totalTarget.toFixed(1)}%
+            </span>
+          </div>
         </div>
         <div className="border border-slate-200 rounded-xl overflow-hidden">
           <table className="w-full text-sm text-left">
@@ -657,12 +732,20 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                 <th className="px-4 py-3 w-32">Target %</th>
                 <th className="px-4 py-3 w-32">Lower Band %</th>
                 <th className="px-4 py-3 w-32">Upper Band %</th>
+                <th className="px-4 py-3 w-12"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {allocations.map((alloc, idx) => (
                 <tr key={alloc.id || idx} className="bg-white">
-                  <td className="px-4 py-2 font-medium text-slate-900">{alloc.asset_class}</td>
+                  <td className="px-4 py-2">
+                    <input
+                      type="text"
+                      value={alloc.asset_class}
+                      onChange={(e) => handleAllocationChange(idx, 'asset_class', e.target.value)}
+                      className="w-full px-2 py-1 border border-slate-200 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none font-medium text-slate-900"
+                    />
+                  </td>
                   <td className="px-4 py-2">
                     <input
                       type="number"
@@ -686,6 +769,15 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                       onChange={(e) => handleAllocationChange(idx, 'upper_band', e.target.value)}
                       className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right focus:ring-1 focus:ring-blue-500 outline-none"
                     />
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAllocation(idx)}
+                      className="text-slate-400 hover:text-red-500 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               ))}

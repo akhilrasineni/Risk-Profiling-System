@@ -7,7 +7,6 @@ const router = Router();
 router.get("/id/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(`[API] Fetching questionnaire ID: ${id}`);
 
     // 1. Fetch the questionnaire
     const { data: questionnaire, error: qError } = await supabase
@@ -64,7 +63,6 @@ router.get("/id/:id", async (req, res) => {
 router.get("/:version", async (req, res) => {
   try {
     const { version } = req.params;
-    console.log(`[API] Fetching questionnaire version: ${version}`);
 
     // 1. Fetch the questionnaire
     let { data: questionnaire, error: qError } = await supabase
@@ -75,7 +73,6 @@ router.get("/:version", async (req, res) => {
 
     // Fallback: If the specific version isn't found, just grab the first one available
     if (qError || !questionnaire) {
-      console.log(`[API] Version ${version} not found (Error: ${qError?.message || 'None'}). Attempting fallback...`);
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('risk_questionnaires')
         .select('*')
@@ -91,11 +88,9 @@ router.get("/:version", async (req, res) => {
         });
       }
       questionnaire = fallbackData;
-      console.log(`[API] Fallback successful. Found questionnaire ID: ${questionnaire.id}`);
     }
 
     // 2. Fetch all related questions ordered by order_number
-    console.log(`[API] Fetching questions for questionnaire ID: ${questionnaire.id}`);
     const { data: questions, error: questionsError } = await supabase
       .from('risk_questions')
       .select('*')
@@ -113,7 +108,6 @@ router.get("/:version", async (req, res) => {
 
     // 3. Fetch all answer options for these questions
     const questionIds = (questions || []).map((q: any) => q.id);
-    console.log(`[API] Fetching options for ${questionIds.length} questions...`);
     
     let options: any[] = [];
     if (questionIds.length > 0) {
@@ -139,7 +133,6 @@ router.get("/:version", async (req, res) => {
       options: options.filter((o: any) => o.question_id === q.id)
     }));
 
-    console.log(`[API] Successfully assembled questionnaire with ${assembledQuestions.length} questions.`);
     res.json({
       status: "ok",
       data: {
@@ -163,8 +156,6 @@ router.post("/submit", async (req, res) => {
     if (!payload.client_id || !payload.questionnaire_id || !Array.isArray(payload.responses)) {
       return res.status(400).json({ status: "error", message: "Invalid payload format" });
     }
-
-    console.log("Received Risk Profiling Submission:", JSON.stringify(payload, null, 2));
 
     // 1. Fetch all questions and options for this questionnaire to calculate scores
     const { data: questions, error: qError } = await supabase
