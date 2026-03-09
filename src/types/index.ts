@@ -32,7 +32,7 @@ export interface Client {
   risk_assessment_completed?: boolean;
   risk_assessment_finalized?: boolean;
   final_risk_category?: string;
-  health_status?: 'healthy' | 'unhealthy';
+  health_status?: 'healthy' | 'drift_detected';
   created_at: string;
   updated_at?: string;
 }

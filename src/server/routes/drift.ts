@@ -91,7 +91,7 @@ router.get("/health-status/:client_id", async (req, res) => {
     
     res.json({ 
       status: "ok", 
-      health_status: isUnhealthy ? "Unhealthy" : "Healthy" 
+      health_status: isUnhealthy ? "Drift Detected" : "Healthy" 
     });
   } catch (error: any) {
     res.status(500).json({ status: "error", message: error.message });
@@ -226,7 +226,7 @@ router.post("/fix-health-status", async (req, res) => {
     
     const { error: cError } = await supabase
       .from('clients')
-      .update({ health_status: 'unhealthy' })
+      .update({ health_status: 'drift_detected' })
       .in('id', clientIds);
       
     if (cError) throw cError;

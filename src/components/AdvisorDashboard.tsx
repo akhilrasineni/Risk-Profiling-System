@@ -24,6 +24,23 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
   const [selectedDriftEvent, setSelectedDriftEvent] = useState<DriftEvent | null>(null);
   const [isDriftMinimized, setIsDriftMinimized] = useState(false);
   const [isDriftClosed, setIsDriftClosed] = useState(false);
+  const [driftPosition, setDriftPosition] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const savedPosition = localStorage.getItem('driftAlertPosition');
+    if (savedPosition) {
+      setDriftPosition(JSON.parse(savedPosition));
+    }
+  }, []);
+
+  const handleDragEnd = (_: any, info: any) => {
+    const newPosition = {
+      x: driftPosition.x + info.offset.x,
+      y: driftPosition.y + info.offset.y
+    };
+    setDriftPosition(newPosition);
+    localStorage.setItem('driftAlertPosition', JSON.stringify(newPosition));
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -245,10 +262,10 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
                           <td className="px-6 py-4 text-slate-500">{client.annual_income ? `$${client.annual_income.toLocaleString()}` : '-'}</td>
                           <td className="px-6 py-4 text-slate-500">{client.net_worth ? `$${client.net_worth.toLocaleString()}` : '-'}</td>
                           <td className="px-6 py-4">
-                            {client.health_status === 'unhealthy' || hasDrift ? (
+                            {client.health_status === 'drift_detected' || hasDrift ? (
                               <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-600 text-white shadow-sm shadow-red-200">
                                 <AlertTriangle className="w-3 h-3" />
-                                Unhealthy
+                                Drift Detected
                               </span>
                             ) : (
                               <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100">
@@ -382,17 +399,29 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
       </AnimatePresence>
 
       {/* Fixed Drift Alert Container */}
-      <div className="fixed top-20 right-6 z-50">
-        {!isDriftClosed && (
-          <DriftAlert 
-            events={driftEvents.filter(e => !e.alert_sent_flag)} 
-            onDetailsClick={(event) => setSelectedDriftEvent(event)}
-            isMinimized={isDriftMinimized}
-            onToggleMinimize={() => setIsDriftMinimized(!isDriftMinimized)}
-            onClose={() => setIsDriftClosed(true)}
-          />
-        )}
-      </div>
+      {!isDriftClosed && (
+        <motion.div
+          drag
+          dragMomentum={false}
+          onDragEnd={handleDragEnd}
+          animate={{ x: driftPosition.x, y: driftPosition.y }}
+          className="fixed top-20 z-50 cursor-grab active:cursor-grabbing"
+        >
+          <div className={`${isDriftMinimized ? 'right-6' : 'left-0 right-0 flex justify-center'}`}>
+            <div className={`${isDriftMinimized ? '' : 'w-full max-w-6xl px-6 flex justify-end'}`}>
+              <div className={`${isDriftMinimized ? '' : 'w-full max-w-md'}`}>
+                <DriftAlert 
+                  events={driftEvents.filter(e => !e.alert_sent_flag)} 
+                  onDetailsClick={(event) => setSelectedDriftEvent(event)}
+                  isMinimized={isDriftMinimized}
+                  onToggleMinimize={() => setIsDriftMinimized(!isDriftMinimized)}
+                  onClose={() => setIsDriftClosed(true)}
+                />
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }

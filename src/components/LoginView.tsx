@@ -7,8 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { UserSession } from '../types';
 
 export default function LoginView({ onLogin }: { onLogin: (user: UserSession) => void }) {
-  const [userId, setUserId] = useState('');
-  const [password, setPassword] = useState('');
+  const [userId, setUserId] = useState('Rahul Mehta');
+  const [password, setPassword] = useState('1234');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTechStack, setShowTechStack] = useState(false);

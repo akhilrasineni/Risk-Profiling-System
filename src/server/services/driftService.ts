@@ -79,14 +79,14 @@ export async function checkPortfolioDrift(portfolio_id: string) {
     if (iError) throw iError;
 
     // Update client health status
-    console.log(`[Drift] Updating client ${portfolio.client_id} to unhealthy`);
+    console.log(`[Drift] Updating client ${portfolio.client_id} to drift_detected`);
     if (!portfolio.client_id) {
       console.error("[Drift] portfolio.client_id is missing or undefined");
       throw new Error("portfolio.client_id is missing");
     }
     const { error: updateError } = await supabase
       .from('clients')
-      .update({ health_status: 'unhealthy' })
+      .update({ health_status: 'drift_detected' })
       .eq('id', portfolio.client_id);
       
     if (updateError) {
@@ -99,7 +99,7 @@ export async function checkPortfolioDrift(portfolio_id: string) {
       });
       throw updateError;
     }
-    console.log(`[Drift] Successfully updated client ${portfolio.client_id} to unhealthy`);
+    console.log(`[Drift] Successfully updated client ${portfolio.client_id} to drift_detected`);
 
     return { driftDetected: true, data };
   }
