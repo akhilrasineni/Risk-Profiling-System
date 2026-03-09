@@ -89,10 +89,17 @@ router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    // We rely on ON DELETE CASCADE if configured in DB, 
-    // but let's be explicit for safety if needed.
-    // In many Supabase setups, CASCADE is the default for foreign keys.
-    
+    // 1. Delete from user_login table first
+    const { error: loginError } = await supabase
+      .from('user_login')
+      .delete()
+      .eq('profile_id', id);
+
+    if (loginError) {
+      console.warn("Warning: Could not delete login record, it might not exist:", loginError.message);
+    }
+
+    // 2. Delete from clients table
     const { error } = await supabase
       .from('clients')
       .delete()

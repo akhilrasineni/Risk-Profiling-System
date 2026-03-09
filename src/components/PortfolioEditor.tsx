@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Loader2, AlertCircle, Check, SlidersHorizontal, Wallet, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Save, Loader2, AlertCircle, Check, SlidersHorizontal, Wallet, Sparkles, AlertTriangle } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import RebalanceModal from './RebalanceModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -226,13 +226,15 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole, client 
               )}
 
               {isHolding && (
-                <button
-                  onClick={() => setShowRebalanceModal(true)}
-                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-2"
-                >
-                  <SlidersHorizontal className="w-4 h-4" />
-                  Rebalance
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowRebalanceModal(true)}
+                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-2"
+                  >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    Rebalance
+                  </button>
+                </div>
               )}
             </div>
           )}

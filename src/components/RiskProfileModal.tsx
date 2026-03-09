@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { AlertCircle, Loader2, X, ShieldCheck, Activity, BrainCircuit, Search, Check, ClipboardList, FileText, User, Info, ChevronDown, Sparkles, TrendingUp, Heart, Target, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { Client, IPSDocument, TargetAllocation, AIModel } from '../types';
+import { Client, IPSDocument, TargetAllocation, AIModel, DriftEvent } from '../types';
 import IPSEditor from './IPSEditor';
 import PortfolioEditor from './PortfolioEditor';
 import { aiService } from '../services/aiService';
@@ -10,6 +10,7 @@ import { ALLOCATION_MODELS, RiskCategory } from '../constants/allocationModels';
 import Tooltip from './Tooltip';
 import AIModelSelector from './AIModelSelector';
 import { useAIModel } from '../hooks/useAIModel';
+import DriftAlert, { DriftDetailsModal } from './DriftAlert';
 
 const AIErrorDisplay = ({ error, onRetry }: { error: string, onRetry?: () => void }) => {
   let title = "Analysis Unavailable";
@@ -70,6 +71,29 @@ interface RiskProfileModalProps {
   onSuccess?: () => void;
 }
 
+const MissingDataModal = ({ description, onClose, onSubmit }: { description: string, onClose: () => void, onSubmit: (data: string) => void }) => {
+  const [input, setInput] = useState('');
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+        <h4 className="text-lg font-bold text-slate-900 mb-2">Incomplete Data</h4>
+        <p className="text-sm text-slate-600 mb-4">{description}</p>
+        <textarea 
+          className="w-full p-3 border border-slate-200 rounded-lg text-sm mb-4"
+          rows={4}
+          placeholder="Enter missing information..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+        />
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Cancel</button>
+          <button onClick={() => onSubmit(input)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Submit</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function RiskProfileModal({ client, onClose, onSuccess }: RiskProfileModalProps) {
   const [activeTab, setActiveTab] = useState<'profile' | 'ips' | 'portfolio'>('profile');
   
@@ -116,6 +140,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   const [portfolio, setPortfolio] = useState<any>(null);
   const [buildingPortfolio, setBuildingPortfolio] = useState(false);
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
+  const [driftEvents, setDriftEvents] = useState<DriftEvent[]>([]);
+  const [selectedDriftEvent, setSelectedDriftEvent] = useState<DriftEvent | null>(null);
   const { model: selectedModel, updateModel: setSelectedModel } = useAIModel();
 
   useEffect(() => {
@@ -145,6 +171,16 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
           }
         })
         .catch(err => console.error("Failed to fetch portfolio", err));
+
+      // Fetch drift events
+      fetch(`/api/drift/pending/${client.id}`)
+        .then(res => res.json())
+        .then(json => {
+          if (json.status === 'ok') {
+            setDriftEvents(json.data);
+          }
+        })
+        .catch(err => console.error("Failed to fetch drift events", err));
     }
   }, [client]);
 
@@ -267,6 +303,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     }
   };
 
+  const [missingDataInfo, setMissingDataInfo] = useState<{description: string} | null>(null);
+
   const handleRiskClassification = async (assessmentData?: any, force: boolean = false) => {
     const targetData = assessmentData || data;
     if (!targetData) return;
@@ -299,7 +337,17 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       }
     } catch (err: any) {
       console.error(err);
-      setClassificationError(err.message || 'Network error occurred during risk classification analysis');
+      try {
+        const errorObj = JSON.parse(err.message);
+        if (errorObj.type === "INCOMPLETE_DATA") {
+          setMissingDataInfo({ description: errorObj.message });
+          setClassificationError(null);
+        } else {
+          setClassificationError(err.message || 'Network error occurred during risk classification analysis');
+        }
+      } catch (e) {
+        setClassificationError(err.message || 'Network error occurred during risk classification analysis');
+      }
     } finally {
       setAnalyzingClassification(false);
     }
@@ -763,7 +811,18 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
           </div>
 
           <div className="absolute inset-0 z-10 overflow-y-auto p-6 print:static print:p-0 print:overflow-visible">
-            {loading ? (
+            {missingDataInfo && (
+            <MissingDataModal 
+              description={missingDataInfo.description} 
+              onClose={() => setMissingDataInfo(null)} 
+              onSubmit={(input) => {
+                console.log("Missing data submitted:", input);
+                setMissingDataInfo(null);
+                // Here we could trigger a re-analysis with the new data
+              }}
+            />
+          )}
+          {loading ? (
             <div className="flex items-center justify-center h-64">
               <Loader2 className="w-8 h-8 animate-spin text-slate-300" />
             </div>
@@ -1966,7 +2025,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
               {/* TAB: PORTFOLIO */}
               {activeTab === 'portfolio' && portfolio && (
-                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
                   <PortfolioEditor 
                     portfolio={portfolio} 
                     onSave={handleSavePortfolio}
@@ -1979,6 +2038,18 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
           )}
           </div>
         </div>
+
+        <AnimatePresence>
+          {selectedDriftEvent && (
+            <DriftDetailsModal 
+              event={selectedDriftEvent}
+              onClose={() => setSelectedDriftEvent(null)}
+              onAnalysisComplete={(updated) => {
+                setDriftEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
+              }}
+            />
+          )}
+        </AnimatePresence>
       </motion.div>
     </motion.div>
   );

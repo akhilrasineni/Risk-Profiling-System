@@ -192,8 +192,6 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
         }
       });
 
-      // console.log('Generated image size:', dataUrl.length);
-
       const pdfHeight = clone.scrollHeight;
       document.body.removeChild(wrapper);
 

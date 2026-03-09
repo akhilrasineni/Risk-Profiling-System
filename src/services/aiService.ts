@@ -83,10 +83,12 @@ export class AIService {
 
   private async generateContent(
     prompt: string,
-    options: { responseMimeType?: string, responseSchema?: any } = {},
+    options: { responseMimeType?: string, responseSchema?: any, temperature?: number, seed?: number } = {},
     startModel?: AIModel
   ): Promise<string> {
     const modelToTry = startModel || this.currentModel;
+    const temperature = options.temperature ?? 0;
+    const seed = options.seed ?? 42;
 
     try {
       if (this.isGroqModel(modelToTry)) {
@@ -104,6 +106,8 @@ export class AIService {
           messages,
           model: modelToTry,
           response_format: options.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined,
+          temperature: temperature,
+          seed: seed,
         });
 
         return completion.choices[0]?.message?.content || "{}";
@@ -115,6 +119,8 @@ export class AIService {
           config: {
             responseMimeType: options.responseMimeType,
             responseSchema: options.responseSchema,
+            temperature: temperature,
+            seed: seed,
           }
         });
         return result.text || "{}";
@@ -162,6 +168,8 @@ export class AIService {
       Responses:
       ${responsesText}
 
+      Think step-by-step and provide your reasoning before the final JSON.
+
       Based on this, provide the following in a single JSON object:
       1.  "behavioral_summary" (string): A concise, 2-3 sentence summary of the client's likely investment behavior. IMPORTANT: Explicitly mention the reliability of the profile based on the consistency of their answers (e.g., "The profile is highly reliable due to consistent..." or "Caution is advised due to contradictory...").
       2.  "reliability_score" (integer 0-100): A holistic reliability score based on logical consistency, response stability, and profile depth. 100 is perfectly reliable, 0 is completely random/contradictory.
@@ -171,7 +179,7 @@ export class AIService {
 
     const aiResponse = await this.generateContent(
       prompt,
-      { responseMimeType: "application/json" },
+      { responseMimeType: "application/json", temperature: 0, seed: 42 },
       modelOverride
     );
     return JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
@@ -190,25 +198,23 @@ export class AIService {
     }).join('\n');
 
     const prompt = `
-      As an expert financial risk profiling consistency engine, analyze the following risk assessment responses.
-      The client has been algorithmically categorized as: ${riskCategory}.
+      You are an expert financial risk profiling consistency engine. Analyze the following risk assessment responses for a client categorized as: ${riskCategory}.
 
       User Responses:
       ${responsesText}
 
-      Your task:
-      1. Detect logical contradictions between answers (e.g., long horizon vs. early withdrawal).
-      2. Identify overconfidence patterns (e.g., high return expectations with low risk tolerance).
-      3. Identify mismatches between experience and volatility tolerance.
-      4. Assign a Consistency Score from 0–100.
-      5. Classify profile stability as: "Stable", "Slightly Inconsistent", or "Highly Conflicted".
+      Reasoning Structure (You MUST follow this strictly):
+      1. Analyze: Detect logical contradictions between answers (e.g., long horizon vs. early withdrawal).
+      2. Identify: Identify overconfidence patterns (e.g., high return expectations with low risk tolerance) and mismatches between experience and volatility tolerance.
+      3. Evaluate: Assign a Consistency Score from 0–100 and classify profile stability.
 
+      Your task:
       Return a JSON object with the following structure:
       {
         "consistency_score": number,
         "stability_flag": "Stable | Slightly Inconsistent | Highly Conflicted",
         "contradictions_detected": ["string", "string"],
-        "explanation": "A concise markdown-formatted summary of the reasoning"
+        "explanation": "A concise markdown-formatted summary of the reasoning, highlighting key findings in bold."
       }
     `;
 
@@ -228,7 +234,9 @@ export class AIService {
               explanation: { type: Type.STRING, description: "A concise markdown-formatted summary of the reasoning, highlighting key findings in bold." }
             },
             required: ["consistency_score", "stability_flag", "contradictions_detected", "explanation"]
-          }
+          },
+        temperature: 0,
+        seed: 42
       },
       modelOverride
     );
@@ -248,12 +256,7 @@ export class AIService {
       return parsed;
     } catch (e) {
       console.error("Failed to parse AI response:", e);
-      return { 
-        consistency_score: 0, 
-        stability_flag: "Highly Conflicted", 
-        contradictions_detected: ["Failed to analyze profile consistency"], 
-        explanation: "An error occurred during consistency analysis." 
-      };
+      throw new Error("Failed to analyze profile consistency.");
     }
   }
   /**
@@ -270,21 +273,33 @@ export class AIService {
     const prompt = `
       You are a multi-class risk classification model. Analyze the following questionnaire inputs and behavioral signals to predict the probability distribution across risk categories.
 
-      Risk Categories:
-      - Conservative
-      - Moderate
-      - Aggressive
+      Risk Categories & Definitions:
+      - Conservative: Focus on capital preservation, low volatility.
+      - Moderate: Balanced approach, moderate growth and volatility.
+      - Aggressive: Focus on capital appreciation, high volatility.
 
       User Responses:
       ${responsesText}
 
+      Reasoning Structure (You MUST follow this strictly):
+      1. Analyze: Analyze the user's input against the risk definitions above.
+      2. Identify Factors: Identify key factors that increase or decrease risk based on the responses.
+      3. Calculate Distribution: Calculate the probability distribution based on those factors.
+
       Your task:
-      1. Predict probability distribution across the three risk categories.
+      1. Predict probability distribution across the three risk categories as percentages (0-100).
       2. Ensure probabilities sum exactly to 100.
       3. Identify the highest probability category as the "predicted_risk_band".
-      4. Calculate "confidence_level" as the absolute difference between the top two probabilities.
+      4. Calculate "confidence_level" as the absolute difference between the top two probabilities (0-100).
+      
+      STRICT DATA REQUIREMENT:
+      If the provided input data is insufficient to make a confident determination, you must NOT default to any category. Instead, return a JSON object with:
+      {
+        "error": "INCOMPLETE_DATA",
+        "missing_data_description": "A concise description of what data is missing to make a confident determination."
+      }
 
-      Return a JSON object with the following structure:
+      Return a JSON object with the following structure (if data is sufficient):
       {
         "probabilities": {
           "Conservative": number,
@@ -304,38 +319,44 @@ export class AIService {
         responseSchema: {
             type: Type.OBJECT,
             properties: {
+              error: { type: Type.STRING },
+              missing_data_description: { type: Type.STRING },
               probabilities: {
                 type: Type.OBJECT,
                 properties: {
-                  Conservative: { type: Type.NUMBER },
-                  Moderate: { type: Type.NUMBER },
-                  Aggressive: { type: Type.NUMBER }
+                  Conservative: { type: Type.NUMBER, description: "Percentage value between 0 and 100" },
+                  Moderate: { type: Type.NUMBER, description: "Percentage value between 0 and 100" },
+                  Aggressive: { type: Type.NUMBER, description: "Percentage value between 0 and 100" }
                 },
                 required: ["Conservative", "Moderate", "Aggressive"]
               },
               predicted_risk_band: { type: Type.STRING },
-              confidence_level: { type: Type.NUMBER },
+              confidence_level: { type: Type.NUMBER, description: "Confidence level between 0 and 100" },
               explanation: { type: Type.STRING }
-            },
-            required: ["probabilities", "predicted_risk_band", "confidence_level", "explanation"]
-          }
+            }
+          },
+        temperature: 0,
+        seed: 42
       },
       modelOverride
     );
     try {
       const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
+      
+      if (parsed.error === "INCOMPLETE_DATA") {
+        throw new Error(JSON.stringify({ type: "INCOMPLETE_DATA", message: parsed.missing_data_description }));
+      }
+
       if (parsed.explanation) {
         parsed.explanation = parsed.explanation.replace(/<thought>[\s\S]*?<\/thought>/gi, '').trim();
       }
       return parsed;
-    } catch (e) {
+    } catch (e: any) {
+      if (e.message.includes("INCOMPLETE_DATA")) {
+        throw e;
+      }
       console.error("Failed to parse AI risk probability response:", e);
-      return { 
-        probabilities: { Conservative: 33.3, Moderate: 33.3, Aggressive: 33.4 },
-        predicted_risk_band: "Moderate",
-        confidence_level: 0,
-        explanation: "An error occurred during risk probability analysis." 
-      };
+      throw new Error("Failed to analyze risk probabilities.");
     }
   }
 
@@ -353,21 +374,13 @@ export class AIService {
     const prompt = `
       You are a behavioral finance AI model. Analyze the following investment questionnaire responses to detect psychological investment biases.
 
-      Analyze:
-      - Expected return vs experience level
-      - Reaction to drawdowns
-      - Loss history
-      - Derivative exposure
-      - Volatility comfort
-
-      Identify the likelihood (Low | Medium | High) of:
-      1. Overconfidence Bias
-      2. Loss Aversion Bias
-      3. Unrealistic Return Expectation
-      4. Recency Bias
-
       User Responses:
       ${responsesText}
+
+      Reasoning Structure (You MUST follow this strictly):
+      1. Analyze: Examine responses for expected return vs experience level, reaction to drawdowns, loss history, derivative exposure, and volatility comfort.
+      2. Detect: Identify the likelihood (Low | Medium | High) of Overconfidence Bias, Loss Aversion Bias, Unrealistic Return Expectation, and Recency Bias.
+      3. Synthesize: Formulate a dominant behavioral pattern summary.
 
       Return a JSON object with the following structure:
       {
@@ -393,7 +406,9 @@ export class AIService {
               dominant_behavioral_pattern: { type: Type.STRING }
             },
             required: ["overconfidence", "loss_aversion", "unrealistic_expectation", "recency_bias", "dominant_behavioral_pattern"]
-          }
+          },
+        temperature: 0,
+        seed: 42
       },
       modelOverride
     );
@@ -405,13 +420,7 @@ export class AIService {
       return parsed;
     } catch (e) {
       console.error("Failed to parse AI behavioral bias response:", e);
-      return { 
-        overconfidence: "Low", 
-        loss_aversion: "Low", 
-        unrealistic_expectation: "Low", 
-        recency_bias: "Low", 
-        dominant_behavioral_pattern: "An error occurred during behavioral bias analysis." 
-      };
+      throw new Error("Failed to analyze behavioral biases.");
     }
   }
 
@@ -439,14 +448,11 @@ export class AIService {
       User Responses:
       ${responsesText}
 
-      Your task:
-      1. Calculate Risk Capacity Score (0–100): Financial ability to take risk.
-      2. Calculate Risk Tolerance Score (0–100): Emotional comfort with risk.
-      3. Final Risk Score = Minimum of the two.
-      4. Classify final risk band:
-         - Conservative (0–35)
-         - Moderate (36–70)
-         - Aggressive (71–100)
+      Reasoning Structure (You MUST follow this strictly):
+      1. Analyze Capacity: Evaluate financial ability to take risk based on Net Worth, Income, and Liquidity Needs.
+      2. Analyze Tolerance: Evaluate emotional comfort with risk based on questionnaire responses.
+      3. Calculate: Determine Risk Capacity Score (0–100), Risk Tolerance Score (0–100), and Final Risk Score (Minimum of the two).
+      4. Classify: Assign risk band (Conservative: 0–35, Moderate: 36–70, Aggressive: 71–100).
 
       Return a JSON object with the following structure:
       {
@@ -472,7 +478,9 @@ export class AIService {
               explanation: { type: Type.STRING }
             },
             required: ["capacity_score", "tolerance_score", "final_risk_score", "risk_band", "explanation"]
-          }
+          },
+        temperature: 0,
+        seed: 42
       },
       modelOverride
     );
@@ -486,13 +494,7 @@ export class AIService {
       return parsed;
     } catch (e) {
       console.error("Failed to parse AI dual scoring response:", e);
-      return { 
-        capacity_score: 0, 
-        tolerance_score: 0, 
-        final_risk_score: 0, 
-        risk_band: "Conservative", 
-        explanation: "An error occurred during dual risk scoring analysis." 
-      };
+      throw new Error("Failed to analyze dual risk scoring.");
     }
   }
 
@@ -527,12 +529,12 @@ export class AIService {
       Start with the following BASE ALLOCATION (Static Model):
       ${JSON.stringify(staticAllocations)}
 
-      Your task is to "play around" with this base allocation to better fit the client's specific profile (e.g., time horizon, tax situation). 
-      - You may adjust the percentages slightly (e.g., +/- 5-10%).
-      - You MUST ONLY use the asset classes provided in the AVAILABLE ASSET CLASSES list above.
-      - Ensure the total sums to 100%.
+      Reasoning Structure (You MUST follow this strictly):
+      1. Analyze: Evaluate the client's profile against the base allocation.
+      2. Adjust: Refine the allocation to fit the client's specific profile (e.g., time horizon, tax situation). You may adjust percentages slightly (e.g., +/- 5-10%).
+      3. Validate: Ensure the total sums to 100% and only use the provided asset classes.
 
-      Please provide the output in the following JSON format:
+      Return a JSON object with the following structure:
       {
         "investment_objective": "A detailed paragraph describing the client's investment goals, return expectations, and risk tolerance.",
         "goals_description": "A detailed paragraph elaborating on the client's specific financial goals, time horizon implications, and liquidity needs.",
@@ -549,14 +551,11 @@ export class AIService {
           }
         ]
       }
-
-      Ensure the target allocations sum to 100%. The asset classes should be appropriate for the risk profile.
-      Set lower and upper bands (e.g., +/- 5% or 10% of target) to allow for drift.
     `;
 
     const aiResponse = await this.generateContent(
       prompt,
-      { responseMimeType: "application/json" },
+      { responseMimeType: "application/json", temperature: 0, seed: 42 },
       modelOverride
     );
     return JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
@@ -567,6 +566,7 @@ export class AIService {
     targetAllocations: any[],
     availableSecurities: any[],
     currentHoldings: any[],
+    driftEvents: any[] = [],
     modelOverride?: AIModel
   ) {
     const holdingsText = currentHoldings.map(h => 
@@ -581,8 +581,12 @@ export class AIService {
       `- ${t.asset_class}: ${t.target_percent}% (Band: ${t.lower_band}% - ${t.upper_band}%)`
     ).join('\n');
 
+    const driftText = driftEvents.length > 0 ? driftEvents.map(d => 
+      `- ${d.asset_class}: Actual ${d.actual_percent}%, Target ${d.target_percent}%, Band ${d.lower_band}%-${d.upper_band}%, Breach: ${d.breach_type}, Severity: ${d.severity}, Drift: ${d.drift_percent}%, Action: ${d.action_taken || 'None'}`
+    ).join('\n') : 'No drift events detected.';
+
     const prompt = `
-      As a senior investment strategist, analyze the following portfolio and suggest rebalancing actions.
+      As a senior investment strategist, analyze the following portfolio and suggest rebalancing actions. While the IPS is the primary guideline, you are authorized to suggest strategic deviations if market conditions are unfavorable for a specific asset class, provided you justify the deviation based on market performance.
 
       Client's Investment Policy Statement (IPS) Context:
       Risk Category: ${ips?.risk_category || 'Unknown'}
@@ -595,23 +599,35 @@ export class AIService {
       Current Holdings:
       ${holdingsText}
 
+      Drift Analysis (If any):
+      ${driftText}
+
       Available Securities in Database:
       ${availableSecuritiesText}
 
-      Market Context: Assume a neutral to slightly bullish market environment.
+      Market Context: Assume a neutral to slightly bullish market environment. If market conditions are poor for a specific asset class, you may suggest shifting to better-performing alternatives.
 
-      Task: Provide rebalancing recommendations to align the Current Holdings with the Target Allocation Model. You can suggest selling existing holdings, buying more of them, or adding NEW securities from the "Available Securities" list if an asset class is underrepresented.
+      Reasoning Structure (You MUST follow this strictly):
+      1. Analyze: Compare Current Holdings against the Target Allocation Model, considering the Drift Analysis and current market performance for each asset class.
+      2. Identify: Determine necessary actions (sell, buy, or add new securities) to align the portfolio and resolve drift. If a category is underperforming, justify any deviation from the IPS target allocation.
+      3. Validate: Ensure the total of all "suggested_allocation" percentages sums to exactly 100.
 
+      Your task:
       Return a single JSON object with two keys:
-      1. "rebalance_summary" (string): A 2-3 sentence high-level summary explaining the recommended strategy to align with the IPS and target model.
-      2. "suggestions" (array of objects): Specific actions for securities. Each object must have:
-          - "security_name" (string): The name of the security.
-          - "ticker" (string): The security's ticker.
-          - "current_allocation" (number): The current allocation percentage (0 if it's a new suggested purchase).
-          - "suggested_allocation" (number): The new suggested allocation percentage.
-          - "action" (string): A brief rationale (e.g., "Buy to meet Large Cap target," "Trim to reduce overweight position").
-
-      IMPORTANT: Ensure the total of all "suggested_allocation" percentages sums to exactly 100.
+      {
+        "rebalance_summary": "A 2-3 sentence high-level summary explaining the recommended strategy to align with the IPS and target model, addressing the drift.",
+        "suggestions": [
+          {
+            "security_name": "string",
+            "ticker": "string",
+            "current_allocation": number,
+            "suggested_allocation": number,
+            "action": "string (rationale)",
+            "is_ips_deviation": boolean,
+            "deviation_reason": "string (required if is_ips_deviation is true, otherwise empty string)"
+          }
+        ]
+      }
     `;
 
     const aiResponse = await this.generateContent(
@@ -628,17 +644,21 @@ export class AIService {
                   type: Type.OBJECT,
                   properties: {
                     security_name: { type: Type.STRING },
-                    ticker: { type: Type.STRING },
+                    ticker: { type: Type.STRING, description: "The ticker symbol of the security. MUST be included. If unknown, use the ticker from the Available Securities list." },
                     current_allocation: { type: Type.NUMBER },
                     suggested_allocation: { type: Type.NUMBER },
-                    action: { type: Type.STRING }
+                    action: { type: Type.STRING },
+                    is_ips_deviation: { type: Type.BOOLEAN, description: "True if the suggested allocation deviates from the IPS target allocation band due to market conditions." },
+                    deviation_reason: { type: Type.STRING, description: "Required if is_ips_deviation is true, explaining why the deviation is necessary." }
                   },
-                  required: ["security_name", "ticker", "current_allocation", "suggested_allocation", "action"]
+                  required: ["security_name", "ticker", "current_allocation", "suggested_allocation", "action", "is_ips_deviation", "deviation_reason"]
                 }
               }
             },
             required: ["rebalance_summary", "suggestions"]
-          }
+          },
+        temperature: 0,
+        seed: 42
       },
       modelOverride
     );
@@ -656,7 +676,85 @@ export class AIService {
       };
     } catch (e) {
       console.error("Failed to parse AI response:", e);
-      return { rebalance_summary: "Failed to parse AI suggestions.", suggestions: [] };
+      throw new Error("Failed to parse AI suggestions.");
+    }
+  }
+
+  /**
+   * Analyzes portfolio drift and provides recommendations.
+   */
+  async analyzeDrift(
+    driftData: {
+      portfolio_id: string;
+      allocation: Record<string, number>;
+      target: Record<string, number>;
+      bands: Record<string, [number, number]>;
+      severity: string;
+    },
+    modelOverride?: AIModel
+  ) {
+    const allocationText = Object.entries(driftData.allocation)
+      .map(([asset, percent]) => `${asset}: ${percent}%`)
+      .join('\n');
+    
+    const targetText = Object.entries(driftData.target)
+      .map(([asset, percent]) => {
+        const [lower, upper] = driftData.bands[asset] || [0, 0];
+        return `${asset}: ${percent}% (band ${lower}%–${upper}%)`;
+      })
+      .join('\n');
+
+    const prompt = `
+      You are a portfolio advisor. Analyze the following portfolio drift and provide recommendations.
+
+      Portfolio allocation:
+      ${allocationText}
+
+      Target allocation:
+      ${targetText}
+
+      Severity: ${driftData.severity}
+
+      Reasoning Structure (You MUST follow this strictly):
+      1. Analyze: Determine why drift happened based on allocation vs target.
+      2. Assess: Evaluate the risk impact of this drift.
+      3. Recommend: Formulate rebalance actions and an advisor message.
+
+      Return a JSON object with the following structure:
+      {
+        "reason": "string",
+        "risk_impact": "string",
+        "recommendations": ["string", "string"],
+        "advisor_message": "string"
+      }
+    `;
+
+    const aiResponse = await this.generateContent(
+      prompt,
+      {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            reason: { type: Type.STRING },
+            risk_impact: { type: Type.STRING },
+            recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
+            advisor_message: { type: Type.STRING }
+          },
+          required: ["reason", "risk_impact", "recommendations", "advisor_message"]
+        },
+        temperature: 0,
+        seed: 42
+      },
+      modelOverride
+    );
+    
+    try {
+      const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
+      return parsed;
+    } catch (e) {
+      console.error("Failed to parse AI drift analysis response:", e);
+      throw new Error("Failed to analyze portfolio drift. Please try again.");
     }
   }
 }

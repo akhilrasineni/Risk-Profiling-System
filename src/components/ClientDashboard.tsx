@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { ClipboardList, UserCircle, LogOut, Briefcase, FileText, ArrowLeft, ShieldCheck, PieChart, TrendingUp, AlertCircle, Info } from 'lucide-react';
+import { ClipboardList, UserCircle, LogOut, Briefcase, FileText, ArrowLeft, ShieldCheck, PieChart, TrendingUp, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Client, UserSession, IPSDocument, TargetAllocation, Portfolio } from '../types';
+import { Client, UserSession, IPSDocument, TargetAllocation, Portfolio, DriftEvent } from '../types';
 import RiskQuestionnaireView from './RiskQuestionnaireView';
 import IPSEditor from './IPSEditor';
 import PortfolioEditor from './PortfolioEditor';
 import Tooltip from './Tooltip';
+import DriftAlert, { DriftDetailsModal } from './DriftAlert';
 
 interface ClientDashboardProps {
   clientSession: UserSession;
@@ -22,6 +23,11 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
   const [showInvestmentPopup, setShowInvestmentPopup] = useState(false);
   const [investmentAmount, setInvestmentAmount] = useState<string>('');
   const [investmentError, setInvestmentError] = useState<string | null>(null);
+  const [driftEvents, setDriftEvents] = useState<DriftEvent[]>([]);
+  const [healthStatus, setHealthStatus] = useState<'Healthy' | 'Unhealthy' | 'Loading'>('Loading');
+  const [selectedDriftEvent, setSelectedDriftEvent] = useState<DriftEvent | null>(null);
+  const [isDriftMinimized, setIsDriftMinimized] = useState(false);
+  const [isDriftClosed, setIsDriftClosed] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -49,6 +55,24 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
         const portData = await portRes.json();
         if (portData.status === 'ok' && portData.data) {
           setPortfolio(portData.data);
+        }
+
+        // Fetch Drift Events
+        const driftRes = await fetch(`/api/drift/pending/${clientData.id}`);
+        if (driftRes.ok) {
+          const driftData = await driftRes.json();
+          if (driftData.status === 'ok') {
+            setDriftEvents(driftData.data);
+          }
+        }
+
+        // Fetch Health Status
+        const healthRes = await fetch(`/api/drift/health-status/${clientData.id}`);
+        if (healthRes.ok) {
+          const healthData = await healthRes.json();
+          if (healthData.status === 'ok') {
+            setHealthStatus(healthData.health_status);
+          }
         }
       } catch (err) {
         console.error('Error fetching data:', err);
@@ -165,6 +189,17 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-slate-500 font-medium">Welcome, {clientSession.name}</span>
+            
+            {isDriftMinimized && !isDriftClosed && (
+              <DriftAlert 
+                events={driftEvents} 
+                onDetailsClick={(event) => setSelectedDriftEvent(event)}
+                isMinimized={isDriftMinimized}
+                onToggleMinimize={() => setIsDriftMinimized(!isDriftMinimized)}
+                onClose={() => setIsDriftClosed(true)}
+              />
+            )}
+
             <button onClick={onLogout} className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors" title="Sign Out">
               <LogOut className="w-4 h-4" />
             </button>
@@ -186,6 +221,15 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
                 <p className="text-slate-500 mt-2 font-medium">Comprehensive overview of your financial profile and investment status.</p>
               </div>
               <div className="flex gap-3">
+                {!isDriftMinimized && !isDriftClosed && (
+                  <DriftAlert 
+                    events={driftEvents} 
+                    onDetailsClick={(event) => setSelectedDriftEvent(event)}
+                    isMinimized={isDriftMinimized}
+                    onToggleMinimize={() => setIsDriftMinimized(!isDriftMinimized)}
+                    onClose={() => setIsDriftClosed(true)}
+                  />
+                )}
                 <button 
                   onClick={() => setView('assessment')}
                   disabled={clientData.risk_assessment_completed}
@@ -200,7 +244,7 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
                 </button>
               </div>
             </div>
-            
+
             {/* Bento Grid Layout */}
             <div className="flex flex-col gap-6">
               
@@ -213,7 +257,7 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
                   <h3 className="text-xl font-display font-bold text-slate-900 tracking-tight">Financial Profile</h3>
                 </div>
                 
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-8">
                   <div className="group">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 group-hover:text-blue-500 transition-colors">Annual Income</p>
                     <p className="text-2xl font-display font-bold text-slate-900 tracking-tight">
@@ -239,6 +283,13 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 group-hover:text-blue-500 transition-colors">Tax Bracket</p>
                     <p className="text-2xl font-display font-bold text-slate-900 tracking-tight">
                       {clientData.tax_bracket ? `${clientData.tax_bracket}%` : '—'}
+                    </p>
+                  </div>
+
+                  <div className="group">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 group-hover:text-blue-500 transition-colors">Profile Health Status</p>
+                    <p className={`text-2xl font-display font-bold tracking-tight ${healthStatus === 'Unhealthy' ? 'text-red-500' : 'text-emerald-500'}`}>
+                      {healthStatus}
                     </p>
                   </div>
                 </div>
@@ -482,6 +533,18 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
           </motion.div>
         )}
       </div>
+
+      <AnimatePresence>
+        {selectedDriftEvent && (
+          <DriftDetailsModal 
+            event={selectedDriftEvent}
+            onClose={() => setSelectedDriftEvent(null)}
+            onAnalysisComplete={(updated) => {
+              setDriftEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Investment Amount Popup */}
       <AnimatePresence>

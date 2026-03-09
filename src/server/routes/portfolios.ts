@@ -1,7 +1,36 @@
 import { Router } from 'express';
 import { supabase } from '../../db/supabase.js';
+import { checkPortfolioDrift } from '../services/driftService.ts';
 
 const router = Router();
+
+// Get portfolio by ID
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('portfolios')
+      .select(`
+        *,
+        holdings:portfolio_holdings (
+          *,
+          security:securities (*)
+        ),
+        ips:ips_documents (
+          *,
+          target_allocations (*)
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+    
+    res.json({ status: "ok", data });
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
 
 // Get portfolio for client
 router.get("/client/:client_id", async (req, res) => {
@@ -95,6 +124,9 @@ router.put("/:id/holdings", async (req, res) => {
       .from('portfolios')
       .update(updateData)
       .eq('id', id);
+
+    // Trigger drift check
+    await checkPortfolioDrift(id);
 
     res.json({ status: "ok" });
   } catch (error: any) {

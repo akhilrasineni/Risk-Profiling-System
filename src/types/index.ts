@@ -32,6 +32,7 @@ export interface Client {
   risk_assessment_completed?: boolean;
   risk_assessment_finalized?: boolean;
   final_risk_category?: string;
+  health_status?: 'healthy' | 'unhealthy';
   created_at: string;
   updated_at?: string;
 }
@@ -182,6 +183,31 @@ export interface RebalanceHolding extends PortfolioHolding {
   action?: string;
 }
 
+
+export interface DriftEvent {
+  id: string;
+  portfolio_id: string;
+  ips_id: string;
+  asset_class: string;
+  actual_percent: number;
+  target_percent: number;
+  lower_band: number;
+  upper_band: number;
+  breach_type: 'OVER' | 'UNDER';
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+  detected_at: string;
+  alert_sent_flag: boolean;
+  resolved_flag: boolean;
+  resolved_at?: string;
+  action_taken?: string;
+  drift_percent: number;
+  ai_analysis?: {
+    reason: string;
+    risk_impact: string;
+    recommendations: string[];
+    advisor_message: string;
+  };
+}
 
 export type UserSession = {
   id: string;

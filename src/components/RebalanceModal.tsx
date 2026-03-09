@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Loader2, BrainCircuit, X, TrendingUp, Wallet, Trash2, Plus, BarChart2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { motion } from 'framer-motion';
@@ -24,6 +24,21 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
   const [error, setError] = useState<string | null>(null);
   const { model: selectedModel, updateModel: setSelectedModel } = useAIModel();
 
+  useEffect(() => {
+    const fetchDrift = async () => {
+      try {
+        const res = await fetch(`/api/drift/portfolio/${portfolio.id}`);
+        const data = await res.json();
+        if (data.status === 'ok' && data.data.length > 0) {
+          handleGenerateAISuggestions(data.data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch drift events:", err);
+      }
+    };
+    fetchDrift();
+  }, [portfolio.id]);
+
   const totalPortfolioValue = portfolio.total_investment_amount + (portfolio.cash_balance || 0);
 
 
@@ -36,12 +51,12 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
     }));
   }, [holdings, portfolio.holdings]);
 
-  const handleGenerateAISuggestions = async () => {
+  const handleGenerateAISuggestions = async (driftEvents: any[] = []) => {
     setLoadingAi(true);
     setError(null);
     try {
       const ips = Array.isArray(portfolio.ips) ? portfolio.ips[0] : portfolio.ips;
-      const result = await aiService.suggestRebalanceActions(ips, ips?.target_allocations || [], securities, holdings, selectedModel);
+      const result = await aiService.suggestRebalanceActions(ips, ips?.target_allocations || [], securities, holdings, driftEvents, selectedModel);
       setAiSuggestions(result);
 
       if (result && Array.isArray(result.suggestions)) {
@@ -242,7 +257,7 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
                   className="w-48"
                 />
                 <button 
-                  onClick={handleGenerateAISuggestions}
+                  onClick={() => handleGenerateAISuggestions([])}
                   disabled={loadingAi}
                   className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
                 >
@@ -265,10 +280,15 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
                     <ul className="list-disc pl-4 space-y-1">
                       {aiSuggestions.suggestions.map((s: any, i: number) => (
                         <li key={i}>
-                          <span className="font-semibold">{s.security_name} ({s.ticker}):</span> {s.action}
+                          <span className="font-semibold">{s.security_name} {s.ticker ? `(${s.ticker})` : ''}:</span> {s.action}
                           <span className="ml-2 text-blue-600 font-mono">
                             (Target: {s.suggested_allocation}%)
                           </span>
+                          {s.is_ips_deviation && (
+                            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800">
+                              <span className="font-bold">IPS Deviation:</span> {s.deviation_reason}
+                            </div>
+                          )}
                         </li>
                       ))}
                     </ul>

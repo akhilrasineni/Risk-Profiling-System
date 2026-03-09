@@ -7,15 +7,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { UserSession } from '../types';
 
 export default function LoginView({ onLogin }: { onLogin: (user: UserSession) => void }) {
-  const [role, setRole] = useState<'advisor' | 'client'>('advisor');
-  const [idInput, setIdInput] = useState('');
+  const [userId, setUserId] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTechStack, setShowTechStack] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!idInput.trim()) return;
+    if (!userId.trim() || !password.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -24,16 +24,15 @@ export default function LoginView({ onLogin }: { onLogin: (user: UserSession) =>
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: idInput.trim(), role })
+        body: JSON.stringify({ userId: userId.trim(), password: password.trim() })
       });
       
       const data = await response.json();
       
       if (response.ok && data.status === 'ok') {
         const user = data.user;
-        const firstName = user.first_name || user.firstName || '';
-        const lastName = user.last_name || user.lastName || '';
-        const name = role === 'advisor' ? user.full_name : ((firstName || lastName) ? `${firstName} ${lastName}`.trim() : (user.email || user.id || 'User'));
+        const role = data.role;
+        const name = role === 'advisor' ? user.full_name : (user.first_name || user.firstName || user.email || user.id || 'User');
           
         onLogin({ id: user.id, role, name, rawData: user });
       } else {
@@ -47,7 +46,7 @@ export default function LoginView({ onLogin }: { onLogin: (user: UserSession) =>
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans relative selection:bg-blue-100">
+    <div className="h-screen w-screen bg-gray-50 flex items-center justify-center p-4 font-sans relative selection:bg-blue-100 overflow-hidden">
       {/* Enhanced Background */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
         {/* Base Gradient */}
@@ -83,40 +82,31 @@ export default function LoginView({ onLogin }: { onLogin: (user: UserSession) =>
           {/* Subtle accent line */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-emerald-500 opacity-20"></div>
 
-          <div className="flex p-1 bg-slate-100 rounded-2xl mb-8 relative">
-            <div className="absolute inset-1 flex">
-                <motion.div 
-                    className="w-1/2 bg-white rounded-xl shadow-sm"
-                    layout
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    animate={{ x: role === 'advisor' ? '0%' : '100%' }}
-                />
-            </div>
-            <button
-              onClick={() => setRole('advisor')}
-              className={`flex-1 py-2.5 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all relative z-10 ${role === 'advisor' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              Advisor
-            </button>
-            <button
-              onClick={() => setRole('client')}
-              className={`flex-1 py-2.5 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all relative z-10 ${role === 'client' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              Investor
-            </button>
-          </div>
-
           <form onSubmit={handleLogin} className="space-y-6">
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2.5 ml-1">
-                {role === 'advisor' ? 'Advisor ID' : 'Investor ID'}
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2.5 text-center">
+                User ID
               </label>
               <input
                 type="text"
-                value={idInput}
-                onChange={(e) => setIdInput(e.target.value)}
-                placeholder="Enter your unique ID"
-                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono placeholder:text-slate-300 transition-all"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+                placeholder="Enter your User ID"
+                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono placeholder:text-slate-300 transition-all text-center"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2.5 text-center">
+                Password
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono placeholder:text-slate-300 transition-all text-center"
                 required
               />
             </div>
@@ -130,7 +120,7 @@ export default function LoginView({ onLogin }: { onLogin: (user: UserSession) =>
 
             <button
               type="submit"
-              disabled={loading || !idInput.trim()}
+              disabled={loading || !userId.trim() || !password.trim()}
               className="w-full flex items-center justify-center gap-3 py-4 bg-blue-600 text-white rounded-2xl text-sm font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 active:scale-[0.98] disabled:opacity-50"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UserCircle className="w-5 h-5" />}

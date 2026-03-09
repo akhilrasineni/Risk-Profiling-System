@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, Loader2, Users, LogOut, Briefcase, UserPlus, BrainCircuit, Trash2, User, Eye } from 'lucide-react';
+import { AlertCircle, Loader2, Users, LogOut, Briefcase, UserPlus, BrainCircuit, Trash2, User, Eye, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Client, UserSession, AIModel } from '../types';
+import { Client, UserSession, AIModel, DriftEvent } from '../types';
 import AddClientModal from './AddClientModal';
 import RiskProfileModal from './RiskProfileModal';
 import { aiService } from '../services/aiService';
 import AIModelSelector from './AIModelSelector';
 import { useAIModel } from '../hooks/useAIModel';
+import DriftAlert, { DriftDetailsModal } from './DriftAlert';
+import { supabase } from '../db/supabase';
 
 export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserSession, onLogout: () => void }) {
   const [clients, setClients] = useState<Client[]>([]);
+  const [clientPortfolios, setClientPortfolios] = useState<Record<string, string[]>>({}); // client_id -> portfolio_ids[]
+  const [driftEvents, setDriftEvents] = useState<DriftEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -17,14 +21,41 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
   const { model: selectedModel, updateModel: setSelectedModel } = useAIModel();
   const [showSettings, setShowSettings] = useState(false);
+  const [selectedDriftEvent, setSelectedDriftEvent] = useState<DriftEvent | null>(null);
+  const [isDriftMinimized, setIsDriftMinimized] = useState(false);
+  const [isDriftClosed, setIsDriftClosed] = useState(false);
 
   useEffect(() => {
-    fetchClients();
+    const init = async () => {
+      await fetchClients(true);
+      await fetchDriftEvents();
+    };
+    init();
+
+    // Constant monitoring (polling every 30 seconds)
+    const interval = setInterval(() => {
+      fetchDriftEvents();
+      fetchClients(false);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [advisor.id]);
 
-  const fetchClients = async () => {
+  const fetchDriftEvents = async () => {
     try {
-      setLoading(true);
+      const res = await fetch(`/api/drift/advisor/${advisor.id}`);
+      const data = await res.json();
+      if (data.status === 'ok') {
+        setDriftEvents(data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch drift events:", err);
+    }
+  };
+
+  const fetchClients = async (showLoader = true) => {
+    try {
+      if (showLoader) setLoading(true);
       const res = await fetch(`/api/advisors/${advisor.id}/clients`);
       
       if (!res.ok) {
@@ -34,14 +65,33 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
       
       const data = await res.json();
       if (data.status === 'ok') {
-        setClients(data.data);
+        const clientsData = data.data as Client[];
+        setClients(clientsData);
+
+        // Fetch portfolios for these clients to map drift events correctly
+        if (clientsData.length > 0) {
+          const clientIds = clientsData.map(c => c.id);
+          const { data: pData, error: pError } = await supabase
+            .from('portfolios')
+            .select('id, client_id')
+            .in('client_id', clientIds);
+          
+          if (!pError && pData) {
+            const mapping: Record<string, string[]> = {};
+            pData.forEach(p => {
+              if (!mapping[p.client_id]) mapping[p.client_id] = [];
+              mapping[p.client_id].push(p.id);
+            });
+            setClientPortfolios(mapping);
+          }
+        }
       } else {
         setError(data.message || 'Failed to fetch clients');
       }
     } catch (err: any) {
       setError(err.message || 'Network error');
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
@@ -99,6 +149,7 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
               />
             </div>
             <span className="text-sm text-slate-500 font-medium">Welcome, {advisor.name}</span>
+            
             <button onClick={onLogout} className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors" title="Sign Out">
               <LogOut className="w-4 h-4" />
             </button>
@@ -117,6 +168,7 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
               <h2 className="text-3xl font-display font-bold tracking-tight text-slate-900">Your Investors</h2>
               <p className="text-sm text-slate-500 mt-1">Manage your clients and view their profiles.</p>
             </div>
+            
             <button 
               onClick={() => setShowAddForm(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
@@ -154,48 +206,91 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
                       <th className="px-6 py-4 font-medium">Email</th>
                       <th className="px-6 py-4 font-medium">Income</th>
                       <th className="px-6 py-4 font-medium">Net Worth</th>
+                      <th className="px-6 py-4 font-medium">Status</th>
                       <th className="px-6 py-4 font-medium">Investor ID</th>
                       <th className="px-6 py-4 font-medium text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {clients.map((client) => (
-                      <tr key={client.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4 font-medium text-slate-900">{client.first_name} {client.last_name}</td>
-                        <td className="px-6 py-4 text-slate-500">{client.email}</td>
-                        <td className="px-6 py-4 text-slate-500">{client.annual_income ? `$${client.annual_income.toLocaleString()}` : '-'}</td>
-                        <td className="px-6 py-4 text-slate-500">{client.net_worth ? `$${client.net_worth.toLocaleString()}` : '-'}</td>
-                        <td className="px-6 py-4">
-                          <code className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 font-mono">{client.id}</code>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-3">
-                            {client.risk_assessment_completed ? (
-                              <button 
-                                onClick={() => setViewingProfileFor(client)}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors group relative"
-                                title="View Profile"
-                              >
-                                <User className="w-5 h-5" />
-                                <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">View Profile</span>
-                              </button>
+                    {clients.map((client) => {
+                      const hasDrift = driftEvents.some(e => {
+                        const portfolioData = (e as any).portfolio;
+                        // If portfolioData is an array (e.g. from a previous join), take the first one
+                        const portfolio = Array.isArray(portfolioData) ? portfolioData[0] : portfolioData;
+                        const cid = portfolio?.client_id;
+                        
+                        return cid === client.id;
+                      });
+                      return (
+                        <tr 
+                          key={client.id} 
+                          className={`transition-all duration-500 ${
+                            hasDrift 
+                              ? 'animate-blink-red' 
+                              : 'hover:bg-slate-50/50'
+                          }`}
+                        >
+                          <td className="px-6 py-4 font-medium text-slate-900">
+                            <div className="flex items-center gap-2">
+                              {hasDrift && (
+                                <div className="relative flex h-3 w-3">
+                                  <span className="animate-pulse-ring absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                </div>
+                              )}
+                              {client.first_name} {client.last_name}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-slate-500">{client.email}</td>
+                          <td className="px-6 py-4 text-slate-500">{client.annual_income ? `$${client.annual_income.toLocaleString()}` : '-'}</td>
+                          <td className="px-6 py-4 text-slate-500">{client.net_worth ? `$${client.net_worth.toLocaleString()}` : '-'}</td>
+                          <td className="px-6 py-4">
+                            {client.health_status === 'unhealthy' || hasDrift ? (
+                              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-600 text-white shadow-sm shadow-red-200">
+                                <AlertTriangle className="w-3 h-3" />
+                                Unhealthy
+                              </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                Pending
+                              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100">
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                                Healthy
                               </span>
                             )}
-                            <button 
-                              onClick={() => setDeletingClient(client)}
-                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Delete Investor"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-6 py-4">
+                            <code className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 font-mono">{client.id}</code>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end gap-3">
+                              {client.risk_assessment_completed ? (
+                                <button 
+                                  onClick={() => setViewingProfileFor(client)}
+                                  className={`p-2 rounded-lg transition-colors group relative ${
+                                    hasDrift ? 'text-red-600 hover:bg-red-100' : 'text-blue-600 hover:bg-blue-50'
+                                  }`}
+                                  title="View Profile"
+                                >
+                                  <User className="w-5 h-5" />
+                                  <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">View Profile</span>
+                                </button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                  Pending
+                                </span>
+                              )}
+                              <button 
+                                onClick={() => setDeletingClient(client)}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete Investor"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -203,6 +298,18 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
           </div>
         </motion.div>
       </main>
+
+      <AnimatePresence>
+        {selectedDriftEvent && (
+          <DriftDetailsModal 
+            event={selectedDriftEvent}
+            onClose={() => setSelectedDriftEvent(null)}
+            onAnalysisComplete={(updated) => {
+              setDriftEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showAddForm && (
@@ -225,6 +332,7 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
             onSuccess={() => {
               setViewingProfileFor(null);
               fetchClients();
+              fetchDriftEvents();
             }}
           />
         )}
@@ -272,6 +380,19 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Fixed Drift Alert Container */}
+      <div className="fixed top-20 right-6 z-50">
+        {!isDriftClosed && (
+          <DriftAlert 
+            events={driftEvents.filter(e => !e.alert_sent_flag)} 
+            onDetailsClick={(event) => setSelectedDriftEvent(event)}
+            isMinimized={isDriftMinimized}
+            onToggleMinimize={() => setIsDriftMinimized(!isDriftMinimized)}
+            onClose={() => setIsDriftClosed(true)}
+          />
+        )}
+      </div>
     </div>
   );
 }

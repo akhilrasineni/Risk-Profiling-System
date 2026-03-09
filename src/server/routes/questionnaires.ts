@@ -36,8 +36,7 @@ router.get("/id/:id", async (req, res) => {
       const { data: opts, error: optionsError } = await supabase
         .from('risk_answer_options')
         .select('*')
-        .in('question_id', questionIds)
-        .order('order_number', { ascending: true });
+        .in('question_id', questionIds);
         
       if (optionsError) throw optionsError;
       options = opts || [];
