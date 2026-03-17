@@ -24,6 +24,18 @@ export default defineConfig(({mode}) => {
           env.GROQ_API_KEY
         ].find(k => k && typeof k === 'string' && !k.includes('MY_') && !k.includes('YOUR_') && k !== 'placeholder') || '').trim()
       ),
+      'process.env.SUPABASE_URL': JSON.stringify(
+        ([
+          process.env.SUPABASE_URL,
+          env.SUPABASE_URL
+        ].find(k => k && typeof k === 'string' && !k.includes('MY_') && !k.includes('YOUR_') && k !== 'placeholder') || '').trim()
+      ),
+      'process.env.SUPABASE_ANON_KEY': JSON.stringify(
+        ([
+          process.env.SUPABASE_ANON_KEY,
+          env.SUPABASE_ANON_KEY
+        ].find(k => k && typeof k === 'string' && !k.includes('MY_') && !k.includes('YOUR_') && k !== 'placeholder') || '').trim()
+      ),
     },
     resolve: {
       alias: {

@@ -42,26 +42,32 @@ The app needs to connect to your Supabase database and the Gemini AI API.
 SUPABASE_URL=your_supabase_project_url_here
 SUPABASE_ANON_KEY=your_supabase_anon_key_here
 
-# Google Gemini AI Configuration
+# AI Configuration
 GEMINI_API_KEY=your_gemini_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
 3. Replace the placeholder values with your actual keys:
    - **Supabase Keys:** Go to your Supabase Dashboard > Project Settings > API.
    - **Gemini Key:** Go to [Google AI Studio](https://aistudio.google.com/app/apikey) to generate an API key.
+   - **Groq Key:** Go to [Groq Console](https://console.groq.com/keys) to generate an API key.
 
 ---
 
 ## Step 4: Start the Development Server
 
+### Option A: Using VS Code Built-in Debugger (Recommended)
+1. Go to the **Run and Debug** view in VS Code (`Ctrl+Shift+D` or `Cmd+Shift+D`).
+2. Select **Full Stack Debug** from the dropdown menu at the top.
+3. Click the green play button (or press `F5`).
+4. This will automatically start the server and open Chrome connected to your local environment.
+
+### Option B: Using the Terminal
 1. In your VS Code terminal, run the following command:
    ```bash
    npm run dev
    ```
-2. You should see output indicating the server has started, usually looking like this:
-   ```
-   Server running on http://localhost:3000
-   ```
+2. You should see output indicating the server has started.
 3. Open your web browser and navigate to `http://localhost:3000`.
 
 ---
