@@ -90,17 +90,23 @@ export class AIService {
     const temperature = options.temperature ?? 0;
     const seed = options.seed ?? 42;
 
+    const systemInstruction = "CRITICAL INSTRUCTION: You must act as a strict, deterministic function. Do not hallucinate, imagine, or infer any information, preferences, or market conditions not explicitly provided in the input. Your output must be strictly and exclusively derived from the provided data. Do not deviate from your original decisions when given the same input.";
+
     try {
+      let responseText = "{}";
       if (this.isGroqModel(modelToTry)) {
         const groq = this.getGroqClient();
-        const messages: any[] = [{ role: 'user', content: prompt }];
+        const messages: any[] = [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: prompt }
+        ];
         
         // If JSON is requested, ensure the prompt mentions JSON
         let finalPrompt = prompt;
         if (options.responseMimeType === 'application/json' && !finalPrompt.toLowerCase().includes('json')) {
           finalPrompt += '\n\nPlease respond in JSON format.';
         }
-        messages[0].content = finalPrompt;
+        messages[1].content = finalPrompt;
 
         const completion = await groq.chat.completions.create({
           messages,
@@ -110,21 +116,24 @@ export class AIService {
           seed: seed,
         });
 
-        return completion.choices[0]?.message?.content || "{}";
+        responseText = completion.choices[0]?.message?.content || "{}";
       } else {
         const ai = this.getClient();
         const result = await ai.models.generateContent({
           model: modelToTry,
           contents: [{ parts: [{ text: prompt }] }],
           config: {
+            systemInstruction: systemInstruction,
             responseMimeType: options.responseMimeType,
             responseSchema: options.responseSchema,
             temperature: temperature,
             seed: seed,
           }
         });
-        return result.text || "{}";
+        responseText = result.text || "{}";
       }
+
+      return responseText;
     } catch (error: any) {
       
       
