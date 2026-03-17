@@ -77,7 +77,7 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
         response_stability = analysis.response_stability || 0;
         reliability_score = analysis.reliability_score || 0;
       } catch (aiErr) {
-        console.error("AI Analysis failed:", aiErr);
+        
         ai_behavior_summary = "";
         consistency_score = 0;
         response_stability = 0;

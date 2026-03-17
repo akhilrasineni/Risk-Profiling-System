@@ -1,7 +1,8 @@
 import { supabase } from '../db/supabase.ts';
+import { aiService } from './aiService.ts';
 
 export const portfolioService = {
-  async createPortfolioFromIPS(ipsId: string, clientId: string, totalInvestment?: number) {
+  async createPortfolioFromIPS(ipsId: string, clientId: string, totalInvestment?: number, model?: any) {
     // 1. Fetch IPS and Allocations
     const { data: ips, error: ipsError } = await supabase
       .from('ips_documents')
@@ -15,8 +16,11 @@ export const portfolioService = {
     if (ipsError) throw ipsError;
 
     // 2. Validate Investment Amount
-    if (!totalInvestment || totalInvestment <= 0) {
-      throw new Error('Total investment amount is required and must be greater than zero.');
+    
+    
+    if (totalInvestment === undefined || totalInvestment === null || totalInvestment <= 0) {
+      
+      throw new Error('Total investment amount is required and must be greater than zero. Please update the client profile with investable assets or net worth.');
     }
     
     const { data: portfolio, error: portError } = await supabase
@@ -34,42 +38,31 @@ export const portfolioService = {
     if (portError) throw portError;
 
     try {
-      // 3. Allocate Capital & Create Holdings
-      const holdings = [];
+      // 3. Fetch All Available Securities
+      const { data: allSecurities, error: secError } = await supabase
+        .from('securities')
+        .select('id, security_name, current_price, asset_class, asset_sub_class');
+        
+      if (secError) throw secError;
+
+      // 4. Draft Portfolio using AI
+      const aiDraft = await aiService.draftPortfolioFromIPS(ips, totalInvestment, allSecurities || [], model);
       
-      if (ips.target_allocations) {
-        for (const alloc of ips.target_allocations) {
-          const amount = totalInvestment * (alloc.target_percent / 100);
-          
-          // 4. Select Security (Simple logic: pick first matching asset class)
-          // Map 'Debt' to 'Fixed Income' if needed
-          let assetClass = alloc.asset_class;
-          if (assetClass === 'Debt') assetClass = 'Fixed Income'; 
-          
-          const { data: securities, error: secError } = await supabase
-            .from('securities')
-            .select('id, security_name, current_price')
-            .eq('asset_class', assetClass)
-            .limit(1);
-            
-          if (secError) throw secError;
-          
-          if (securities && securities.length > 0) {
-            const security = securities[0];
-            const units = security.current_price > 0 ? amount / security.current_price : 0;
-            
-            holdings.push({
-              portfolio_id: portfolio.id,
-              security_id: security.id,
-              allocated_percent: alloc.target_percent,
-              allocated_amount: amount,
-              units: units
-            });
-          } else {
-            throw new Error(`No security found in the database for asset class: ${assetClass}. Please add securities to the database before creating a portfolio.`);
-          }
-        }
+      // Calculate actual sum of percentages
+      const actualTotalPercent = aiDraft.holdings.reduce((sum: number, h: any) => sum + h.allocated_percent, 0);
+      
+      // Validate AI output
+      if (Math.abs(actualTotalPercent - 100) > 0.1) {
+        throw new Error(`AI generated portfolio with invalid total allocation: ${actualTotalPercent.toFixed(2)}%. Please try again.`);
       }
+      
+      const holdings = aiDraft.holdings.map((h: any) => ({
+        portfolio_id: portfolio.id,
+        security_id: h.security_id,
+        allocated_percent: h.allocated_percent,
+        allocated_amount: h.allocated_amount,
+        units: h.units
+      }));
       
       if (holdings.length > 0) {
         const { error: holdError } = await supabase

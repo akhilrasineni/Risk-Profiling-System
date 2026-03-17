@@ -91,7 +91,7 @@ router.get("/health-status/:client_id", async (req, res) => {
     
     res.json({ 
       status: "ok", 
-      health_status: isUnhealthy ? "Drift Detected" : "Healthy" 
+      health_status: isUnhealthy ? "drift_detected" : "healthy" 
     });
   } catch (error: any) {
     res.status(500).json({ status: "error", message: error.message });
@@ -128,7 +128,7 @@ router.get("/advisor/:advisor_id", async (req, res) => {
     }
     
     const portfolioIds = portfolios.map(p => p.id);
-    console.log(`[Drift] Querying drift events for ${portfolioIds.length} portfolios`);
+    
 
     const allDriftEvents = [];
     const CHUNK_SIZE = 50;
@@ -142,7 +142,6 @@ router.get("/advisor/:advisor_id", async (req, res) => {
         .eq('resolved_flag', false);
       
       if (error) {
-        console.error("[Drift] Supabase error details:", JSON.stringify(error, null, 2));
         throw error;
       }
       if (data) {
@@ -160,11 +159,7 @@ router.get("/advisor/:advisor_id", async (req, res) => {
     
     res.json({ status: "ok", data: allDriftEvents });
   } catch (error: any) {
-    console.error("[Drift] Catch error details:", {
-      message: error.message,
-      stack: error.stack,
-      raw: error
-    });
+    
     res.status(500).json({ status: "error", message: error.message || "An unknown error occurred" });
   }
 });
@@ -198,40 +193,6 @@ router.put("/:id/ai-analysis", async (req, res) => {
       
     if (error) throw error;
     res.json({ status: "ok", data });
-  } catch (error: any) {
-    res.status(500).json({ status: "error", message: error.message });
-  }
-});
-
-// Fix health_status for existing drift events
-router.post("/fix-health-status", async (req, res) => {
-  try {
-    const { data: driftEvents, error: dError } = await supabase
-      .from('drift_events')
-      .select('portfolio_id')
-      .eq('resolved_flag', false);
-      
-    if (dError) throw dError;
-    
-    const portfolioIds = Array.from(new Set(driftEvents.map(e => e.portfolio_id)));
-    
-    const { data: portfolios, error: pError } = await supabase
-      .from('portfolios')
-      .select('client_id')
-      .in('id', portfolioIds);
-      
-    if (pError) throw pError;
-    
-    const clientIds = Array.from(new Set(portfolios.map(p => p.client_id)));
-    
-    const { error: cError } = await supabase
-      .from('clients')
-      .update({ health_status: 'drift_detected' })
-      .in('id', clientIds);
-      
-    if (cError) throw cError;
-    
-    res.json({ status: "ok", message: "Fixed health status for " + clientIds.length + " clients" });
   } catch (error: any) {
     res.status(500).json({ status: "error", message: error.message });
   }

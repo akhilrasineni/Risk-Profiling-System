@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { supabase } from '../../db/supabase.js';
-import { portfolioService } from '../../services/portfolioService.js';
-import { ALLOCATION_MODELS, RiskCategory } from '../../constants/allocationModels.js';
+import { supabase } from '../../db/supabase.ts';
+import { portfolioService } from '../../services/portfolioService.ts';
+import { ALLOCATION_MODELS, RiskCategory } from '../../constants/allocationModels.ts';
 
 const router = Router();
 
@@ -40,11 +40,17 @@ router.post("/save", async (req, res) => {
             liquidity_needs: ips_data.liquidity_needs,
             tax_considerations: ips_data.tax_considerations,
             rebalancing_frequency: ips_data.rebalancing_frequency,
+            rebalancing_band_percent: ips_data.rebalancing_band_percent,
             rebalancing_strategy_description: ips_data.rebalancing_strategy_description,
             monitoring_review_description: ips_data.monitoring_review_description,
             constraints_description: ips_data.constraints_description,
             goals_description: ips_data.goals_description,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            advisor_accepted_at: null,
+            client_accepted_at: null,
+            status: 'Draft',
+            finalized_at: null
           })
           .eq('id', existing_ips_id);
 
@@ -117,7 +123,7 @@ router.post("/save", async (req, res) => {
 
     res.json({ status: "ok", data: fullIps });
   } catch (error: any) {
-    console.error("Error saving IPS:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -149,7 +155,7 @@ router.get("/client/:client_id/versions", async (req, res) => {
 
     res.json({ status: "ok", data: data || [] });
   } catch (error: any) {
-    console.error("Error fetching IPS versions:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -183,7 +189,7 @@ router.get("/client/:client_id", async (req, res) => {
 
     res.json({ status: "ok", data: data || null });
   } catch (error: any) {
-    console.error("Error fetching IPS:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -198,6 +204,7 @@ router.put("/:id", async (req, res) => {
       liquidity_needs, 
       tax_considerations, 
       rebalancing_frequency,
+      rebalancing_band_percent,
       rebalancing_strategy_description,
       monitoring_review_description,
       constraints_description,
@@ -213,6 +220,7 @@ router.put("/:id", async (req, res) => {
       liquidity_needs,
       tax_considerations,
       rebalancing_frequency,
+      rebalancing_band_percent,
       rebalancing_strategy_description,
       monitoring_review_description,
       constraints_description,
@@ -255,7 +263,7 @@ router.put("/:id", async (req, res) => {
 
     res.json({ status: "ok", data: ips });
   } catch (error: any) {
-    console.error("Error updating IPS:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -275,8 +283,10 @@ router.put("/:id/accept", async (req, res) => {
 
     if (role === 'advisor') {
       updates.advisor_accepted_at = timestamp;
+      updates.advisor_signed_at = timestamp;
     } else {
       updates.client_accepted_at = timestamp;
+      updates.client_signed_at = timestamp;
       
       // If client is accepting and provided investable_assets, update client record
       if (investable_assets) {
@@ -342,7 +352,7 @@ router.put("/:id/accept", async (req, res) => {
 
     res.json({ status: "ok", data: ips });
   } catch (error: any) {
-    console.error("Error accepting IPS:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -375,18 +385,24 @@ router.post("/:id/build-portfolio", async (req, res) => {
       .single();
 
     if (clientError) throw clientError;
+    if (!client) throw new Error("Client not found");
+    
+    // Log the raw values for debugging
+    
 
     const investmentAmount = client.investable_assets || client.net_worth;
+    
+    
 
-    if (!investmentAmount || investmentAmount <= 0) {
+    if (investmentAmount === undefined || investmentAmount === null || investmentAmount <= 0) {
       return res.status(400).json({ 
         status: "error", 
-        message: "Client's investable assets or net worth is missing. Please ensure the client has provided an investment amount." 
+        message: "Client's investable assets or net worth is missing or zero. Please ensure the client has provided an investment amount in their profile." 
       });
     }
 
     // 3. Create Portfolio
-    const newPortfolio = await portfolioService.createPortfolioFromIPS(id, ips.client_id, investmentAmount);
+    const newPortfolio = await portfolioService.createPortfolioFromIPS(id, ips.client_id, investmentAmount, req.body.model);
 
     // 4. Fetch full portfolio with holdings to return
     const { data: fullPortfolio, error: fetchPortError } = await supabase
@@ -405,9 +421,10 @@ router.post("/:id/build-portfolio", async (req, res) => {
 
     res.json({ status: "ok", data: fullPortfolio });
   } catch (error: any) {
-    console.error("Error building portfolio:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
+
 
 export default router;

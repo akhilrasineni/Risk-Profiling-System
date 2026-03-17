@@ -32,7 +32,7 @@ router.post("/:id/finalize", async (req, res) => {
 
     res.json({ status: "ok", data });
   } catch (error: any) {
-    console.error("Error finalizing assessment:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -54,7 +54,7 @@ router.post("/:id/consistency", async (req, res) => {
 
     res.json({ status: "ok", data });
   } catch (error: any) {
-    console.error("Error saving consistency analysis:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -76,13 +76,12 @@ router.post("/:id/dual-scoring", async (req, res) => {
       .single();
 
     if (error) {
-      console.warn("Could not save dual scoring analysis (column might be missing):", error.message);
       return res.json({ status: "ok", message: "Analysis completed but not saved to DB (column missing)" });
     }
 
     res.json({ status: "ok", data });
   } catch (error: any) {
-    console.error("Error saving dual scoring analysis:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -101,13 +100,12 @@ router.post("/:id/behavioral-biases", async (req, res) => {
       .single();
 
     if (error) {
-      console.warn("Could not save behavioral bias analysis (column might be missing):", error.message);
       return res.json({ status: "ok", message: "Analysis completed but not saved to DB (column missing)" });
     }
 
     res.json({ status: "ok", data });
   } catch (error: any) {
-    console.error("Error saving behavioral bias analysis:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -126,13 +124,12 @@ router.post("/:id/risk-probabilities", async (req, res) => {
       .single();
 
     if (error) {
-      console.warn("Could not save risk probability analysis (column might be missing):", error.message);
       return res.json({ status: "ok", message: "Analysis completed but not saved to DB (column missing)" });
     }
 
     res.json({ status: "ok", data });
   } catch (error: any) {
-    console.error("Error saving risk probability analysis:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -154,7 +151,7 @@ router.post("/:id/ai-analysis", async (req, res) => {
 
     res.json({ status: "ok", data });
   } catch (error: any) {
-    console.error("Error saving AI analysis:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -187,7 +184,7 @@ router.post("/:id/reject", async (req, res) => {
 
     res.json({ status: "ok", message: "Assessment deleted. Client can now retake." });
   } catch (error: any) {
-    console.error("Error rejecting assessment:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });

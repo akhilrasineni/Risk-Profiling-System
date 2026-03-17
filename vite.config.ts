@@ -8,9 +8,22 @@ export default defineConfig(({mode}) => {
   return {
     plugins: [react(), tailwindcss()],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_KEY),
-      'process.env.GEMINI_KEY': JSON.stringify(env.GEMINI_KEY),
-      'process.env.GROQ_API_KEY': JSON.stringify(env.GROQ_API_KEY),
+      'process.env.GEMINI_API_KEY': JSON.stringify(
+        ([
+          process.env.GEMINI_API_KEY,
+          process.env.GOOGLE_API_KEY,
+          process.env.GEMINI_KEY,
+          env.GEMINI_API_KEY,
+          env.GOOGLE_API_KEY,
+          env.GEMINI_KEY
+        ].find(k => k && typeof k === 'string' && !k.includes('MY_') && !k.includes('YOUR_') && k !== 'placeholder') || '').trim()
+      ),
+      'process.env.GROQ_API_KEY': JSON.stringify(
+        ([
+          process.env.GROQ_API_KEY,
+          env.GROQ_API_KEY
+        ].find(k => k && typeof k === 'string' && !k.includes('MY_') && !k.includes('YOUR_') && k !== 'placeholder') || '').trim()
+      ),
     },
     resolve: {
       alias: {

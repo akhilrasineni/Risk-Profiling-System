@@ -24,7 +24,7 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
   const [investmentAmount, setInvestmentAmount] = useState<string>('');
   const [investmentError, setInvestmentError] = useState<string | null>(null);
   const [driftEvents, setDriftEvents] = useState<DriftEvent[]>([]);
-  const [healthStatus, setHealthStatus] = useState<'Healthy' | 'Unhealthy' | 'Loading'>('Loading');
+  const [healthStatus, setHealthStatus] = useState<'healthy' | 'drift_detected' | 'loading'>('loading');
   const [selectedDriftEvent, setSelectedDriftEvent] = useState<DriftEvent | null>(null);
   const [isDriftMinimized, setIsDriftMinimized] = useState(false);
   const [isDriftClosed, setIsDriftClosed] = useState(false);
@@ -75,7 +75,7 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
           }
         }
       } catch (err) {
-        console.error('Error fetching data:', err);
+        
       }
     };
     
@@ -288,8 +288,8 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
 
                   <div className="group">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 group-hover:text-blue-500 transition-colors">Profile Health Status</p>
-                    <p className={`text-2xl font-display font-bold tracking-tight ${healthStatus === 'Unhealthy' ? 'text-red-500' : 'text-emerald-500'}`}>
-                      {healthStatus}
+                    <p className={`text-2xl font-display font-bold tracking-tight ${healthStatus === 'drift_detected' ? 'text-red-500' : 'text-emerald-500'}`}>
+                      {healthStatus === 'drift_detected' ? 'Drift Detected' : healthStatus === 'healthy' ? 'Healthy' : 'Loading...'}
                     </p>
                   </div>
                 </div>

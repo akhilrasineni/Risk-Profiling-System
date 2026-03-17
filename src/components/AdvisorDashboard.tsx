@@ -66,7 +66,7 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
         setDriftEvents(data.data);
       }
     } catch (err) {
-      console.error("Failed to fetch drift events:", err);
+      
     }
   };
 

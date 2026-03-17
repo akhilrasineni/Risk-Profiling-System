@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Loader2, AlertCircle, Check, Edit2, X, FileText, BrainCircuit, Calendar, User, ShieldCheck, Target, TrendingUp, DollarSign, Scale, Printer, Download, Info } from 'lucide-react';
+import { Save, Loader2, AlertCircle, Check, Edit2, Edit3, X, FileText, BrainCircuit, Calendar, User, ShieldCheck, Target, TrendingUp, DollarSign, Scale, Printer, Download, Info } from 'lucide-react';
 import { IPSDocument, TargetAllocation, Client } from '../types';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -13,23 +13,41 @@ interface IPSEditorProps {
   onRegenerate?: () => Promise<void>;
   ipsVersions?: (IPSDocument & { target_allocations: TargetAllocation[] })[];
   onVersionSelect?: (versionId: string) => void;
+  onDelete?: () => Promise<void>;
   generatingIPS?: boolean;
 }
 
-export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor', onAccept, onRegenerate, ipsVersions = [], onVersionSelect, generatingIPS = false }: IPSEditorProps) {
+export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor', onAccept, onRegenerate, ipsVersions = [], onVersionSelect, onDelete, generatingIPS = false }: IPSEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [formData, setFormData] = useState({
-    investment_objective: ips.investment_objective,
-    time_horizon_years: ips.time_horizon_years,
-    liquidity_needs: ips.liquidity_needs,
-    tax_considerations: ips.tax_considerations,
-    rebalancing_frequency: ips.rebalancing_frequency,
-    rebalancing_strategy_description: ips.rebalancing_strategy_description,
-    monitoring_review_description: ips.monitoring_review_description,
-    constraints_description: ips.constraints_description,
-    goals_description: ips.goals_description,
-    status: ips.status
+    investment_objective: ips.investment_objective || '',
+    time_horizon_years: Number(ips.time_horizon_years) || 0,
+    liquidity_needs: Number(ips.liquidity_needs) || 0,
+    tax_considerations: Number(ips.tax_considerations) || 0,
+    rebalancing_frequency: ips.rebalancing_frequency || 'Quarterly',
+    rebalancing_strategy_description: ips.rebalancing_strategy_description || '',
+    monitoring_review_description: ips.monitoring_review_description || '',
+    constraints_description: ips.constraints_description || '',
+    goals_description: ips.goals_description || '',
+    rebalancing_band_percent: Number(ips.rebalancing_band_percent) || 5,
+    status: ips.status || 'Draft',
+    risk_category: ips.risk_category || 'Moderate'
   });
+
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this draft IPS? This action cannot be undone.')) return;
+    
+    setIsDeleting(true);
+    try {
+      if (onDelete) await onDelete();
+    } catch (err: any) {
+      
+      setError(err.message || 'Failed to delete IPS');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const [allocations, setAllocations] = useState<TargetAllocation[]>(ips.target_allocations || []);
   const [saving, setSaving] = useState(false);
@@ -39,27 +57,29 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
 
   useEffect(() => {
     setFormData({
-      investment_objective: ips.investment_objective,
-      time_horizon_years: ips.time_horizon_years,
-      liquidity_needs: ips.liquidity_needs,
-      tax_considerations: ips.tax_considerations,
-      rebalancing_frequency: ips.rebalancing_frequency,
-      rebalancing_strategy_description: ips.rebalancing_strategy_description,
-      monitoring_review_description: ips.monitoring_review_description,
-      constraints_description: ips.constraints_description,
-      goals_description: ips.goals_description,
-      status: ips.status
+      investment_objective: ips.investment_objective || '',
+      time_horizon_years: Number(ips.time_horizon_years) || 0,
+      liquidity_needs: Number(ips.liquidity_needs) || 0,
+      tax_considerations: Number(ips.tax_considerations) || 0,
+      rebalancing_frequency: ips.rebalancing_frequency || 'Quarterly',
+      rebalancing_strategy_description: ips.rebalancing_strategy_description || '',
+      monitoring_review_description: ips.monitoring_review_description || '',
+      constraints_description: ips.constraints_description || '',
+      goals_description: ips.goals_description || '',
+      rebalancing_band_percent: Number(ips.rebalancing_band_percent) || 5,
+      status: ips.status || 'Draft',
+      risk_category: ips.risk_category || 'Moderate'
     });
     setAllocations(ips.target_allocations || []);
   }, [ips]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    const isNumeric = ['time_horizon_years', 'liquidity_needs', 'tax_considerations', 'rebalancing_band_percent'].includes(name);
+    
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'time_horizon_years' || name === 'liquidity_needs' || name === 'tax_considerations' 
-        ? parseFloat(value) 
-        : value
+      [name]: isNumeric ? (parseFloat(value) || 0) : value
     }));
   };
 
@@ -92,11 +112,104 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
     setAllocations(newAllocations);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const [inconsistencies, setInconsistencies] = useState<string[]>([]);
+
+  const checkConsistency = () => {
+    const newInconsistencies = [];
+    const currentTotalTarget = allocations.reduce((sum, a) => sum + (a.target_percent || 0), 0);
+    if (Math.abs(currentTotalTarget - 100) > 0.1) {
+      newInconsistencies.push("Total asset allocation must be 100%.");
+    }
+    if (formData.time_horizon_years < 1) {
+      newInconsistencies.push("Time horizon must be at least 1 year.");
+    }
+    
+    // Cross-module consistency checks
+    if (ips.risk_assessments && formData.risk_category !== ips.risk_assessments.risk_category) {
+        newInconsistencies.push(`Risk category (${formData.risk_category}) does not match risk assessment (${ips.risk_assessments.risk_category}).`);
+    }
+    
+    if (client && formData.liquidity_needs && client.liquidity_needs && Number(formData.liquidity_needs) !== client.liquidity_needs) {
+        newInconsistencies.push(`Liquidity needs ($${formData.liquidity_needs}) does not match client profile ($${client.liquidity_needs}).`);
+    }
+
+    if (client && formData.tax_considerations && client.tax_bracket && Number(formData.tax_considerations) !== client.tax_bracket) {
+        newInconsistencies.push(`Tax bracket (${formData.tax_considerations}%) does not match client profile (${client.tax_bracket}%).`);
+    }
+
+    // Text-parsing consistency check for time horizon
+    const rangeRegex = /(\d+)\s*[-–—]\s*(\d+)\s*year(s)?/i;
+    const singleYearRegex = /(\d+)\s*year(s)?/i;
+    const driftRegex = /(\d+)\s*%/;
+
+    const foundYears: { [key: string]: number } = {};
+
+    const checkDescription = (desc: string, fieldName: string) => {
+        // Check time horizon
+        const rangeMatch = desc.match(rangeRegex);
+        if (rangeMatch) {
+            const min = parseInt(rangeMatch[1], 10);
+            const max = parseInt(rangeMatch[2], 10);
+            if (formData.time_horizon_years < min || formData.time_horizon_years > max) {
+                newInconsistencies.push(`Time horizon in ${fieldName} (${min}-${max} years) is inconsistent with form data (${formData.time_horizon_years} years).`);
+            }
+            // Store for cross-section comparison (using max as representative or just flagging if different)
+            foundYears[fieldName] = max; 
+        } else {
+            const singleMatch = desc.match(singleYearRegex);
+            if (singleMatch) {
+                const yearsInText = parseInt(singleMatch[1], 10);
+                if (yearsInText !== formData.time_horizon_years) {
+                    newInconsistencies.push(`Time horizon in ${fieldName} (${yearsInText} years) does not match form data (${formData.time_horizon_years} years).`);
+                }
+                foundYears[fieldName] = yearsInText;
+            }
+        }
+
+        // Check drift tolerance in rebalancing strategy
+        if (fieldName === "rebalancing strategy") {
+            const driftMatch = desc.match(driftRegex);
+            if (driftMatch) {
+                const driftInText = parseInt(driftMatch[1], 10);
+                if (driftInText !== formData.rebalancing_band_percent) {
+                    newInconsistencies.push(`Drift tolerance in ${fieldName} (${driftInText}%) does not match form data (${formData.rebalancing_band_percent}%).`);
+                }
+            }
+        }
+    };
+
+    if (formData.constraints_description) checkDescription(formData.constraints_description, "constraints");
+    if (formData.goals_description) checkDescription(formData.goals_description, "goals");
+    if (formData.rebalancing_strategy_description) checkDescription(formData.rebalancing_strategy_description, "rebalancing strategy");
+
+    // Cross-section comparison for time horizon
+    const sections = Object.keys(foundYears);
+    for (let i = 0; i < sections.length; i++) {
+        for (let j = i + 1; j < sections.length; j++) {
+            if (foundYears[sections[i]] !== foundYears[sections[j]]) {
+                newInconsistencies.push(`Mismatch: ${sections[i]} mentions ${foundYears[sections[i]]} years, but ${sections[j]} mentions ${foundYears[sections[j]]} years. Please correct for consistency.`);
+            }
+        }
+    }
+
+    return newInconsistencies;
+  };
+
+  const handleSubmit = async (e: React.FormEvent, forceSave = false) => {
     e.preventDefault();
+    
+    if (!forceSave) {
+      const newInconsistencies = checkConsistency();
+      if (newInconsistencies.length > 0) {
+        setInconsistencies(newInconsistencies);
+        return;
+      }
+    }
+    
     setSaving(true);
     setError(null);
     setSuccess(false);
+    setInconsistencies([]);
 
     try {
       await onSave({
@@ -204,7 +317,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
       pdf.addImage(dataUrl, 'PNG', 0, 0, 1024, pdfHeight);
       pdf.save(`IPS_${client.last_name}_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (err) {
-      console.error('Error generating PDF:', err);
+      
       alert('Failed to generate PDF. Please try again.');
     } finally {
       setIsGeneratingPDF(false);
@@ -221,7 +334,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
               <FileText className="w-5 h-5 text-slate-600" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">Investment Policy Statement</h3>
+              <h3 className="font-sans text-sm font-semibold text-slate-900">Investment Policy Statement</h3>
               {ipsVersions.length > 1 ? (
                 <div className="flex items-center gap-2 mt-1">
                   <select
@@ -269,7 +382,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                 {generatingIPS ? 'Regenerating...' : 'Regenerate'}
               </button>
             )}
-            {viewerRole === 'advisor' && formData.status !== 'Active' && (
+            {viewerRole === 'advisor' && (formData.status === 'Draft' || formData.status === 'Finalized') && (
               <button
                 onClick={() => setIsEditing(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm"
@@ -278,6 +391,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                 Edit Document
               </button>
             )}
+            {/* No delete button */}
           </div>
         </div>
 
@@ -337,7 +451,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
             
             {/* Section I: Purpose */}
             <section>
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-3 mb-6 flex items-center gap-2">
+              <h2 className="font-sans text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-3 mb-6 flex items-center gap-2">
                 <span className="text-slate-400">01</span> Purpose & Mandate <AIBadge />
               </h2>
               <div className="space-y-6 text-slate-700 leading-relaxed">
@@ -353,28 +467,28 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
 
             {/* Section II: Objectives */}
             <section>
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-3 mb-6 flex items-center gap-2">
+              <h2 className="font-sans text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-3 mb-6 flex items-center gap-2">
                 <span className="text-slate-400">02</span> Investment Objectives & Goals <AIBadge />
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-2">
                     <Target className="w-4 h-4 text-blue-600" />
-                    <h3 className="text-xs font-bold text-slate-500 uppercase">Risk Profile</h3>
+                    <h3 className="font-sans text-xs font-bold text-slate-500 uppercase">Risk Profile</h3>
                   </div>
                   <p className="text-lg font-bold text-slate-900">{ips.risk_category}</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-2">
                     <TrendingUp className="w-4 h-4 text-emerald-600" />
-                    <h3 className="text-xs font-bold text-slate-500 uppercase">Time Horizon</h3>
+                    <h3 className="font-sans text-xs font-bold text-slate-500 uppercase">Time Horizon</h3>
                   </div>
                   <p className="text-lg font-bold text-slate-900">{formData.time_horizon_years} Years</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-2">
                     <DollarSign className="w-4 h-4 text-amber-600" />
-                    <h3 className="text-xs font-bold text-slate-500 uppercase">Liquidity Needs</h3>
+                    <h3 className="font-sans text-xs font-bold text-slate-500 uppercase">Liquidity Needs</h3>
                   </div>
                   <p className="text-lg font-bold text-slate-900">${formData.liquidity_needs?.toLocaleString()}</p>
                 </div>
@@ -388,14 +502,17 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                 </p>
 
                 <p>
-                  {formData.goals_description || (ips.risk_assessments?.ai_behavior_summary ? ips.risk_assessments.ai_behavior_summary.split('[')[0].trim() : "The investment strategy is designed to align with the client's long-term financial objectives.")}
+                  The client's primary financial goal is to accumulate a sufficient amount of wealth to meet their liquidity needs of ${formData.liquidity_needs?.toLocaleString()} within the next {formData.time_horizon_years} years. This time horizon implies a {formData.risk_category.toLowerCase()} level of risk, as the client is willing to take on some level of market volatility in pursuit of higher returns.
                 </p>
+                {formData.goals_description && (
+                  <p className="mt-4">{formData.goals_description}</p>
+                )}
               </div>
             </section>
 
             {/* Section III: Constraints */}
             <section>
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
+              <h2 className="font-sans text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
                 <span className="text-slate-400">03</span> Constraints & Considerations <AIBadge />
               </h2>
               <div className="space-y-6">
@@ -423,7 +540,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
 
             {/* Section IV: Asset Allocation */}
             <section>
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
+              <h2 className="font-sans text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
                 <span className="text-slate-400">04</span> Target Asset Allocation <AIBadge isAllocation={true} />
               </h2>
               <div className="overflow-hidden rounded-lg border border-slate-200">
@@ -457,7 +574,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
 
             {/* Section V: Rebalancing */}
             <section>
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
+              <h2 className="font-sans text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
                 <span className="text-slate-400">05</span> Rebalancing Strategy <AIBadge />
               </h2>
               <p className="text-sm text-slate-600 leading-relaxed mb-4">
@@ -468,16 +585,25 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                   <span className="text-slate-500 font-medium">Frequency:</span>
                   <span className="ml-2 font-semibold text-slate-900">{formData.rebalancing_frequency}</span>
                 </div>
-                <div>
+                <div className="flex items-center group">
                   <span className="text-slate-500 font-medium">Drift Tolerance:</span>
-                  <span className="ml-2 font-semibold text-slate-900">+/- 5% (Absolute)</span>
+                  <span className="ml-2 font-semibold text-slate-900">+/- {formData.rebalancing_band_percent || 5}% (Absolute)</span>
+                  {viewerRole === 'advisor' && (
+                    <button 
+                      onClick={() => setIsEditing(true)}
+                      className="ml-2 p-1 text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-all rounded hover:bg-blue-50"
+                      title="Edit Drift Tolerance"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               </div>
             </section>
 
             {/* Section VI: Monitoring */}
             <section>
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
+              <h2 className="font-sans text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
                 <span className="text-slate-400">06</span> Monitoring & Review <AIBadge />
               </h2>
               <p className="text-sm text-slate-600 leading-relaxed">
@@ -513,6 +639,9 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                   </div>
                   <p className="text-xs font-bold text-slate-500 uppercase">Client Signature</p>
                   <p className="text-sm font-medium text-slate-900">{client.first_name} {client.last_name}</p>
+                  {ips.client_signed_at && (
+                    <p className="text-[10px] text-slate-400 mt-0.5">Digital Signature ID: {ips.id.slice(0, 8)}-{new Date(ips.client_signed_at).getTime()}</p>
+                  )}
                   {ips.client_accepted_at && (
                     <p className="text-xs text-slate-400 mt-1">Signed on {new Date(ips.client_accepted_at).toLocaleDateString()} at {new Date(ips.client_accepted_at).toLocaleTimeString()}</p>
                   )}
@@ -543,6 +672,9 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
                   </div>
                   <p className="text-xs font-bold text-slate-500 uppercase">Advisor Signature</p>
                   <AdvisorSignature />
+                  {ips.advisor_signed_at && (
+                    <p className="text-[10px] text-slate-400 mt-0.5">Digital Signature ID: {ips.id.slice(0, 8)}-{new Date(ips.advisor_signed_at).getTime()}</p>
+                  )}
                   {ips.advisor_accepted_at && (
                     <p className="text-xs text-slate-400 mt-1">Signed on {new Date(ips.advisor_accepted_at).toLocaleDateString()} at {new Date(ips.advisor_accepted_at).toLocaleTimeString()}</p>
                   )}
@@ -561,7 +693,7 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
       {/* Header / Status */}
       <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200">
         <div>
-          <h3 className="text-lg font-semibold text-slate-900">Edit IPS Draft</h3>
+          <h3 className="font-sans text-lg font-semibold text-slate-900">Edit IPS Draft</h3>
           <p className="text-sm text-slate-500">Make changes to the Investment Policy Statement.</p>
         </div>
         <div className="flex items-center gap-3">
@@ -588,6 +720,27 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
         </div>
       </div>
 
+      {inconsistencies.length > 0 && (
+        <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl flex flex-col gap-3 text-amber-800">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Inconsistencies found:</p>
+              <ul className="list-disc pl-5 mt-1">
+                {inconsistencies.map((inc, i) => <li key={i}>{inc}</li>)}
+              </ul>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => handleSubmit(e as any, true)}
+            className="self-end px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
+          >
+            Save Anyway
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-800">
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -607,6 +760,20 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
             className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white leading-relaxed"
             placeholder="Enter the investment objective..."
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Risk Category</label>
+          <select
+            name="risk_category"
+            value={formData.risk_category}
+            onChange={handleInputChange}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+          >
+            <option value="Conservative">Conservative</option>
+            <option value="Moderate">Moderate</option>
+            <option value="Aggressive">Aggressive</option>
+          </select>
         </div>
 
         <div>
@@ -654,6 +821,17 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
             <option value="Semi-Annually">Semi-Annually</option>
             <option value="Annually">Annually</option>
           </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Drift Tolerance (+/- %)</label>
+          <input
+            type="number"
+            name="rebalancing_band_percent"
+            value={formData.rebalancing_band_percent}
+            onChange={handleInputChange}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+          />
         </div>
 
         <div className="md:col-span-2">

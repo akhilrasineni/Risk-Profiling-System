@@ -158,7 +158,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
             setIpsDocument(null);
           }
         })
-        .catch(err => console.error("Failed to fetch IPS versions", err));
+        .catch(() => {});
         
       // Fetch portfolio
       fetch(`/api/portfolios/client/${client.id}`)
@@ -170,7 +170,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
             setPortfolio(null);
           }
         })
-        .catch(err => console.error("Failed to fetch portfolio", err));
+        .catch(() => {});
 
       // Fetch drift events
       fetch(`/api/drift/pending/${client.id}`)
@@ -180,7 +180,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
             setDriftEvents(json.data);
           }
         })
-        .catch(err => console.error("Failed to fetch drift events", err));
+        .catch(() => {});
     }
   }, [client]);
 
@@ -216,10 +216,10 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
           body: JSON.stringify({ analysis: result })
         });
       } catch (saveErr) {
-        console.warn("Failed to save consistency analysis:", saveErr);
+        
       }
     } catch (err: any) {
-      console.error(err);
+      
       setAnalysisError(err.message || 'Network error occurred during AI analysis');
     } finally {
       setAnalyzing(false);
@@ -255,10 +255,10 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
           body: JSON.stringify({ analysis: result })
         });
       } catch (saveErr) {
-        console.warn("Failed to save dual scoring analysis:", saveErr);
+        
       }
     } catch (err: any) {
-      console.error(err);
+      
       setDualError(err.message || 'Network error occurred during dual scoring analysis');
     } finally {
       setAnalyzingDual(false);
@@ -293,10 +293,10 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
           body: JSON.stringify({ analysis: result })
         });
       } catch (saveErr) {
-        console.warn("Failed to save behavioral bias analysis:", saveErr);
+        
       }
     } catch (err: any) {
-      console.error(err);
+      
       setBiasesError(err.message || 'Network error occurred during behavioral bias analysis');
     } finally {
       setAnalyzingBiases(false);
@@ -333,10 +333,10 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
           body: JSON.stringify({ analysis: result })
         });
       } catch (saveErr) {
-        console.warn("Failed to save risk probability analysis:", saveErr);
+        
       }
     } catch (err: any) {
-      console.error(err);
+      
       try {
         const errorObj = JSON.parse(err.message);
         if (errorObj.type === "INCOMPLETE_DATA") {
@@ -405,7 +405,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       const updatedData = await updateRes.json();
       setData(updatedData.data);
     } catch (err: any) {
-      console.error(err);
+      
       setSummaryError(err.message || 'Failed to run AI analysis');
     } finally {
       setAnalyzingSummary(false);
@@ -483,7 +483,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         alert(json.message || 'Failed to finalize assessment');
       }
     } catch (err) {
-      console.error(err);
+      
     } finally {
       setFinalizing(false);
     }
@@ -503,7 +503,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         alert(json.message || 'Failed to reject assessment');
       }
     } catch (err) {
-      console.error(err);
+      
     } finally {
       setFinalizing(false);
       setShowRejectConfirm(false);
@@ -532,22 +532,28 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       // 2. Determine Time Horizon from Responses
       let timeHorizon = 5; // Default
       const horizonResponse = data.responses?.find((r: any) => 
-        (r.risk_questions?.question_text || '').toLowerCase().includes('primary investment horizon') ||
-        (r.risk_questions?.question_text || '').toLowerCase().includes('investment horizon')
+        (r.risk_questions?.question_text || '').toLowerCase().includes('what is your primary investment horizon')
       );
 
       if (horizonResponse) {
         const text = horizonResponse.risk_answer_options?.option_text || '';
-        const match = text.match(/(\d+)/);
-        if (match) {
-          timeHorizon = parseInt(match[1]);
+        // Match ranges like "7-12", "7 to 12", "7–12"
+        const rangeMatch = text.match(/(\d+)\s*[-–to]+\s*(\d+)/i);
+        if (rangeMatch) {
+          const min = parseInt(rangeMatch[1]);
+          const max = parseInt(rangeMatch[2]);
+          // User requested years between the range (e.g., 8,9,10,11,12 for 7-12)
+          // We pick a random one in that specific sub-range
+          const rangeSize = max - min;
+          timeHorizon = Math.floor(Math.random() * rangeSize) + min + 1;
+        } else {
+          // Match single numbers
+          const match = text.match(/(\d+)/);
+          if (match) {
+            timeHorizon = parseInt(match[1]);
+          }
         }
       }
-
-      // 2.5 Fetch Available Asset Classes
-      const assetClassesRes = await fetch('/api/portfolios/securities/asset-classes');
-      const assetClassesData = await assetClassesRes.json();
-      const availableAssetClasses = assetClassesData.status === 'ok' ? assetClassesData.data : ['Equity', 'Fixed Income', 'Alternatives'];
 
       // 3. Generate Full IPS via AI (Frontend Call)
       const staticAllocations = [
@@ -566,7 +572,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
         "None",
         {},
         staticAllocations,
-        availableAssetClasses,
+        data.responses || [],
         selectedModel
       );
 
@@ -585,7 +591,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
             liquidity_needs: client.liquidity_needs || 0,
             tax_considerations: client.tax_bracket || 0,
             rebalancing_frequency: aiResponse.rebalancing_frequency || model.Rebalance,
-            rebalancing_strategy_description: aiResponse.rebalancing_strategy_description,
+            rebalancing_band_percent: aiResponse.rebalancing_band_percent || 5,
+            rebalancing_strategy_description: aiResponse.rebalancing_strategy_description.replace(/\d+%/g, `${aiResponse.rebalancing_band_percent}%`),
             monitoring_review_description: aiResponse.monitoring_review_description,
             constraints_description: aiResponse.constraints_description,
             goals_description: aiResponse.goals_description
@@ -611,12 +618,12 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
               setIpsVersions(vJson.data);
             }
           })
-          .catch(err => console.error("Failed to fetch IPS versions", err));
+          .catch(() => {});
       } else {
         setIpsError(json.message || 'Failed to save IPS');
       }
     } catch (err: any) {
-      console.error(err);
+      
       setIpsError(err.message || 'Error occurred during IPS generation');
     } finally {
       setGeneratingIPS(false);
@@ -652,7 +659,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       });
       const data = await res.json();
       if (data.status === 'ok') {
-        const newIps = { ...ipsDocument, advisor_accepted_at: new Date().toISOString() };
+        const newIps = data.data;
         setIpsDocument(newIps);
         setIpsVersions(prev => prev.map(v => v.id === newIps.id ? newIps : v));
       } else {
@@ -669,7 +676,11 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     setPortfolioError(null);
     try {
       const res = await fetch(`/api/ips/${ipsDocument.id}/build-portfolio`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ model: aiService.getModel() })
       });
       const data = await res.json();
       if (data.status === 'ok') {
@@ -816,7 +827,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
               description={missingDataInfo.description} 
               onClose={() => setMissingDataInfo(null)} 
               onSubmit={(input) => {
-                console.log("Missing data submitted:", input);
+                
                 setMissingDataInfo(null);
                 // Here we could trigger a re-analysis with the new data
               }}

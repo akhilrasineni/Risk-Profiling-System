@@ -10,6 +10,7 @@ interface Security {
   security_name: string;
   ticker?: string;
   asset_class: string;
+  asset_sub_class?: string;
   current_price?: number;
 }
 
@@ -146,17 +147,19 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole, client 
     setError(null);
     setSuccess(false);
     try {
+      const holdingsToSave = (updatedHoldings || holdings).filter(h => h.allocated_percent > 0);
       const res = await fetch(`/api/portfolios/${portfolio.id}/holdings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          holdings: updatedHoldings || holdings,
+          holdings: holdingsToSave,
           cash_balance: updatedCashBalance !== undefined ? updatedCashBalance : walletAmount
         })
       });
       const data = await res.json();
       if (data.status === 'ok') {
         setSuccess(true);
+        setHoldings(holdingsToSave);
         onSave();
       } else {
         throw new Error(data.message);
@@ -273,7 +276,10 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole, client 
               ) : (
                 <h4 className="font-bold text-slate-900 text-base truncate">{holding.security?.security_name}</h4>
               )}
-              <p className="text-xs text-slate-500 font-mono truncate">{holding.security?.ticker} • {holding.security?.asset_class}</p>
+              <p className="text-xs text-slate-500 font-mono truncate">
+                {holding.security?.ticker && holding.security.ticker !== 'undefined' && holding.security.ticker !== 'N/A' ? `${holding.security.ticker} • ` : ''}
+                {holding.security?.asset_sub_class || holding.security?.asset_class}
+              </p>
             </div>
 
             {/* Allocation, Value, Units - Flex container for medium screens up */}

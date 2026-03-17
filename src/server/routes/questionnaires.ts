@@ -53,7 +53,7 @@ router.get("/id/:id", async (req, res) => {
 
     res.json({ status: "ok", data: fullQuestionnaire });
   } catch (error: any) {
-    console.error("Error fetching questionnaire by ID:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });
@@ -79,7 +79,7 @@ router.get("/:version", async (req, res) => {
         .single();
         
       if (fallbackError || !fallbackData) {
-        console.error(`[API] Fallback failed. Error:`, fallbackError);
+        
         return res.status(404).json({ 
           status: "error", 
           message: `Database Error: ${fallbackError?.message || 'No questionnaires found in the table.'}`,
@@ -97,7 +97,7 @@ router.get("/:version", async (req, res) => {
       .order('order_number', { ascending: true });
 
     if (questionsError) {
-      console.error(`[API] Error fetching questions:`, questionsError);
+      
       return res.status(500).json({ 
         status: "error", 
         message: `Error fetching questions: ${questionsError.message}`,
@@ -116,7 +116,7 @@ router.get("/:version", async (req, res) => {
         .in('question_id', questionIds);
 
       if (optionsError) {
-        console.error(`[API] Error fetching options:`, optionsError);
+        
         return res.status(500).json({ 
           status: "error", 
           message: `Error fetching options: ${optionsError.message}`,
@@ -141,7 +141,7 @@ router.get("/:version", async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error("[API] Unhandled error fetching questionnaire:", error);
+    
     res.status(500).json({ status: "error", message: error.message, details: error });
   }
 });
@@ -292,7 +292,7 @@ router.post("/submit", async (req, res) => {
       .insert(finalResponses);
 
     if (responsesError) {
-      console.error("Failed to save individual responses:", responsesError);
+      
     }
 
     // 7. Update the client's risk_assessment_completed flag
@@ -302,7 +302,7 @@ router.post("/submit", async (req, res) => {
       .eq('id', payload.client_id);
 
     if (updateError) {
-      console.error("[API] Failed to update client flag:", updateError);
+      
     }
 
     res.json({ 
@@ -312,7 +312,7 @@ router.post("/submit", async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error("Submission Error:", error);
+    
     res.status(500).json({ status: "error", message: error.message });
   }
 });

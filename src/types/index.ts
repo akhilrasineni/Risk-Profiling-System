@@ -149,6 +149,7 @@ export interface Security {
   security_name: string;
   ticker?: string;
   asset_class: string;
+  asset_sub_class?: string;
   current_price?: number;
 }
 

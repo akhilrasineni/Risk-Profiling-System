@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { supabase } from '../../db/supabase.js';
+import { supabase } from '../../db/supabase.ts';
 import { checkPortfolioDrift } from '../services/driftService.ts';
 
 const router = Router();
@@ -154,11 +154,11 @@ router.get("/securities/asset-classes", async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('securities')
-      .select('asset_class');
+      .select('asset_class, asset_sub_class');
 
     if (error) throw error;
     
-    const uniqueClasses = Array.from(new Set(data.map(s => s.asset_class)));
+    const uniqueClasses = Array.from(new Set(data.map(s => s.asset_sub_class || s.asset_class).filter(Boolean)));
     res.json({ status: "ok", data: uniqueClasses });
   } catch (error: any) {
     res.status(500).json({ status: "error", message: error.message });

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Loader2, BrainCircuit, X, TrendingUp, Wallet, Trash2, Plus, BarChart2 } from 'lucide-react';
+import { Loader2, BrainCircuit, X, TrendingUp, Wallet, Trash2, Plus, BarChart2, Check } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { motion } from 'framer-motion';
 import { Portfolio, PortfolioHolding, RebalanceHolding, AIModel } from '../types';
@@ -33,7 +33,7 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
           handleGenerateAISuggestions(data.data);
         }
       } catch (err) {
-        console.error("Failed to fetch drift events:", err);
+        
       }
     };
     fetchDrift();
@@ -84,7 +84,7 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
               });
               return !alreadyExists;
             })
-            .map((s: any) => {
+            .map((s: any, index: number) => {
               const security = securities.find(sec => {
                 const tickerMatch = s.ticker && sec.ticker && s.ticker.toUpperCase() === sec.ticker.toUpperCase();
                 const nameMatch = s.security_name && sec.security_name && s.security_name.toLowerCase() === sec.security_name.toLowerCase();
@@ -92,7 +92,7 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
               });
               if (!security) return null;
               return {
-                id: `new-${s.ticker || s.security_name}-${Date.now()}`,
+                id: `new-${s.ticker || s.security_name}-${Date.now()}-${index}-${Math.floor(Math.random() * 1000)}`,
                 portfolio_id: portfolio.id,
                 security_id: security.id,
                 security: security,
@@ -179,10 +179,11 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
   const handleSave = async () => {
     setLoading(true);
     try {
-      await onSave(holdings, cashBalance);
+      const filteredHoldings = holdings.filter(h => h.allocated_percent > 0);
+      await onSave(filteredHoldings, cashBalance);
       onClose();
     } catch (error) {
-      console.error("Failed to save rebalance:", error);
+      
     } finally {
       setLoading(false);
     }
@@ -234,7 +235,7 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
                 <div className="text-left space-y-2">
                   <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Rebalancing Engine</p>
                   <ul className="list-disc pl-4 space-y-1 text-slate-300">
-                    <li><span className="text-white font-semibold">Drift Analysis:</span> Deviations &gt;5% from target</li>
+                    <li><span className="text-white font-semibold">Drift Analysis:</span> Deviations &gt;{ (Array.isArray(portfolio.ips) ? portfolio.ips[0] : portfolio.ips)?.rebalancing_band_percent || 5}% from target</li>
                     <li><span className="text-white font-semibold">Tax Efficiency:</span> Long-term vs. short-term gain minimization</li>
                     <li><span className="text-white font-semibold">Market Context:</span> Volatility adjustment (VIX)</li>
                   </ul>
@@ -273,14 +274,41 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
             )}
             {aiSuggestions && (
               <div className='text-xs text-blue-700 bg-white/50 p-3 rounded-lg space-y-3'>
-                <p className='font-semibold'>{aiSuggestions.rebalance_summary || 'Analysis complete.'}</p>
+                <div className="flex items-center justify-between">
+                  <p className='font-semibold'>{aiSuggestions.rebalance_summary || 'Analysis complete.'}</p>
+                  <button
+                    onClick={() => {
+                      if (aiSuggestions && Array.isArray(aiSuggestions.suggestions)) {
+                        const newHoldings = [...holdings];
+                        newHoldings.forEach(h => {
+                          if (h.suggested_percent !== undefined) {
+                            h.allocated_percent = h.suggested_percent;
+                            h.allocated_amount = totalPortfolioValue * (h.allocated_percent / 100);
+                            if (h.security && h.security.current_price > 0) {
+                              h.units = h.allocated_amount / h.security.current_price;
+                            }
+                          }
+                        });
+                        setHoldings(newHoldings);
+                        recalculateCashBalance(newHoldings);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors flex items-center gap-2"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Apply All Suggestions
+                  </button>
+                </div>
                 {Array.isArray(aiSuggestions.suggestions) && aiSuggestions.suggestions.length > 0 && (
                   <div className="space-y-2 mt-2 border-t border-blue-100 pt-2">
                     <p className="font-bold text-blue-800">Recommended Actions:</p>
                     <ul className="list-disc pl-4 space-y-1">
                       {aiSuggestions.suggestions.map((s: any, i: number) => (
                         <li key={i}>
-                          <span className="font-semibold">{s.security_name} {s.ticker ? `(${s.ticker})` : ''}:</span> {s.action}
+                          <span className="font-semibold">
+                            {s.security_name} 
+                            {s.ticker && s.ticker !== 'undefined' && s.ticker !== 'N/A' ? ` (${s.ticker})` : ''}:
+                          </span> {s.action}
                           <span className="ml-2 text-blue-600 font-mono">
                             (Target: {s.suggested_allocation}%)
                           </span>
