@@ -25,13 +25,29 @@ interface Holding {
 
 import { Client } from '../types';
 
+/**
+ * Props for the PortfolioEditor component.
+ */
 interface PortfolioEditorProps {
+  /** The portfolio object to edit or view. */
   portfolio: any;
+  /** Callback function to save the updated portfolio. */
   onSave: () => void;
+  /** The role of the user viewing the portfolio (advisor or client). */
   viewerRole: 'advisor' | 'client';
+  /** Optional client object associated with the portfolio. */
   client?: Client;
 }
 
+/**
+ * PortfolioEditor component provides an interface for managing portfolio holdings.
+ * It allows advisors to add, remove, and adjust securities within a portfolio,
+ * and clients to review their active holdings. It also supports rebalancing
+ * and displays cash balances.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the portfolio editor.
+ */
 export default function PortfolioEditor({ portfolio, onSave, viewerRole, client }: PortfolioEditorProps) {
   const [holdings, setHoldings] = useState<Holding[]>(portfolio.holdings || []);
   const [securities, setSecurities] = useState<Security[]>([]);
@@ -178,66 +194,66 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole, client 
   const isHolding = portfolio.approval_status !== 'Pending';
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-slate-900">Portfolio Construction</h3>
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">Portfolio Construction</h3>
             <Tooltip alignment="left" position="bottom" content={
               <div className="text-left space-y-2">
-                <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Portfolio Construction Logic</p>
+                <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Portfolio Construction Analysis</p>
                 <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                  <li><span className="text-white font-semibold">IPS Targets:</span> Strategic asset allocation from active IPS</li>
                   <li><span className="text-white font-semibold">Risk Profile:</span> {portfolio.ips?.risk_category || 'Balanced'} (Score: {portfolio.ips?.risk_score || 'N/A'})</li>
                   <li><span className="text-white font-semibold">Constraints:</span> Tax Bracket {client?.tax_bracket || portfolio.client?.tax_bracket || '24'}%, Liquidity ${client?.liquidity_needs?.toLocaleString() || portfolio.client?.liquidity_needs?.toLocaleString() || '50,000'}</li>
+                  <li><span className="text-white font-semibold">Fund Selection:</span> Risk-adjusted performance (Sharpe ratio), Expense ratios, and Asset class fit</li>
                   <li><span className="text-white font-semibold">Optimization:</span> Mean-variance efficiency vs. benchmark</li>
                 </ul>
               </div>
             }>
               <div className="px-2 py-0.5 bg-violet-50 text-violet-600 text-[10px] font-bold rounded-full border border-violet-100 uppercase shadow-sm flex items-center gap-1 cursor-help">
                 <Sparkles className="w-3 h-3" />
-                AI Generated
+                AI
               </div>
             </Tooltip>
           </div>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Status: <span className="font-semibold text-blue-600">
-              {portfolio.approval_status === 'Pending' ? 'Portfolio Drafted' : 'Holdings'}
+              {portfolio.approval_status === 'Pending' ? 'Draft' : 'Active Holdings'}
             </span>
           </p>
         </div>
         
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3 px-4 py-2 bg-white border border-slate-200 rounded-xl">
-            <Wallet className="w-5 h-5 text-slate-500" />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-3 px-3 sm:px-4 py-2 bg-white border border-slate-200 rounded-xl shadow-sm">
+            <Wallet className="w-4 h-4 sm:w-5 h-5 text-slate-500" />
             <div className="flex flex-col">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Available Cash</span>
-              <span className="font-mono font-bold text-slate-900 leading-none">${walletAmount.toLocaleString()}</span>
+              <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Available Cash</span>
+              <span className="font-mono font-bold text-slate-900 leading-none text-sm sm:text-base">${walletAmount.toLocaleString()}</span>
             </div>
           </div>
 
           {isAdvisor && (
-            <div className='flex items-center gap-3'>
+            <div className='flex items-center gap-2 sm:gap-3'>
               {!isHolding && (
                 <button
                   onClick={() => handleSave()}
                   disabled={saving || totalPercent > 100.01 || walletAmount < -0.01}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                  className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save Changes
+                  Save
                 </button>
               )}
 
               {isHolding && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowRebalanceModal(true)}
-                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-2"
-                  >
-                    <SlidersHorizontal className="w-4 h-4" />
-                    Rebalance
-                  </button>
-                </div>
+                <button
+                  onClick={() => setShowRebalanceModal(true)}
+                  className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm flex items-center justify-center gap-2"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  Rebalance
+                </button>
               )}
             </div>
           )}
@@ -260,72 +276,72 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole, client 
 
       <div className="flex flex-col gap-3">
         {holdings.map((holding, index) => (
-          <div key={index} className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 flex flex-col md:flex-row items-start md:items-center p-4 gap-4 md:gap-6 group">
+          <div key={index} className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 flex flex-col md:flex-row items-start md:items-center p-3 sm:p-4 gap-3 sm:gap-6 group">
             
-            <div className="flex-1 min-w-0 w-full md:w-auto border-b md:border-b-0 border-slate-100 pb-4 md:pb-0">
+            <div className="flex-1 min-w-0 w-full md:w-auto border-b md:border-b-0 border-slate-100 pb-3 md:pb-0">
               {isAdvisor && !isHolding ? (
                 <select
                   value={holding.security_id}
                   onChange={(e) => handleUpdateHolding(index, { security_id: e.target.value })}
-                  className="w-full bg-transparent border-none focus:ring-0 font-bold text-slate-900 text-base p-0 truncate"
+                  className="w-full bg-transparent border-none focus:ring-0 font-bold text-slate-900 text-sm sm:text-base p-0 truncate"
                 >
                   {securities.map(s => (
                     <option key={s.id} value={s.id}>{s.security_name}</option>
                   ))}
                 </select>
               ) : (
-                <h4 className="font-bold text-slate-900 text-base truncate">{holding.security?.security_name}</h4>
+                <h4 className="font-bold text-slate-900 text-sm sm:text-base truncate">{holding.security?.security_name}</h4>
               )}
-              <p className="text-xs text-slate-500 font-mono truncate">
+              <p className="text-[10px] sm:text-xs text-slate-500 font-mono truncate">
                 {holding.security?.ticker && holding.security.ticker !== 'undefined' && holding.security.ticker !== 'N/A' ? `${holding.security.ticker} • ` : ''}
                 {holding.security?.asset_sub_class || holding.security?.asset_class}
               </p>
             </div>
 
             {/* Allocation, Value, Units - Flex container for medium screens up */}
-            <div className="w-full md:w-auto flex flex-col md:flex-row md:items-center gap-4 md:gap-6 text-sm">
+            <div className="w-full md:w-auto flex flex-col md:flex-row md:items-center gap-3 sm:gap-6 text-sm">
               
               {/* Allocation */}
               <div className='flex md:flex-col justify-between md:justify-start items-center md:items-start w-full md:w-auto'>
-                <p className="md:hidden text-xs text-slate-400 uppercase font-bold">Allocation</p>
-                <p className="hidden md:block text-xs text-slate-400 uppercase font-bold mb-1">Allocation</p>
+                <p className="md:hidden text-[10px] text-slate-400 uppercase font-bold">Allocation</p>
+                <p className="hidden md:block text-[10px] text-slate-400 uppercase font-bold mb-1">Allocation</p>
                 {isAdvisor && portfolio.approval_status === 'Pending' ? (
                   <div className="flex items-center gap-1">
                     <input
                       type="number"
                       value={holding.allocated_percent}
                       onChange={(e) => handleUpdateHolding(index, { allocated_percent: parseFloat(e.target.value) || 0 })}
-                      className="w-20 bg-slate-50 border border-slate-200 rounded-md text-right font-mono p-1 text-sm font-bold text-slate-900"
+                      className="w-16 sm:w-20 bg-slate-50 border border-slate-200 rounded-md text-right font-mono p-1 text-xs sm:text-sm font-bold text-slate-900"
                     />
-                    <span className="text-sm font-bold text-slate-500">%</span>
+                    <span className="text-xs sm:text-sm font-bold text-slate-500">%</span>
                   </div>
                 ) : (
-                  <p className="text-base md:text-lg font-mono font-bold text-slate-900">{holding.allocated_percent.toFixed(2)}%</p>
+                  <p className="text-sm sm:text-lg font-mono font-bold text-slate-900">{holding.allocated_percent.toFixed(2)}%</p>
                 )}
               </div>
 
               {/* Market Value */}
               <div className='flex md:flex-col justify-between md:justify-start items-center md:items-start w-full md:w-auto'>
-                <p className="md:hidden text-xs text-slate-400 uppercase font-bold">Market Value</p>
-                <p className="hidden md:block text-xs text-slate-400 uppercase font-bold mb-1">Market Value</p>
+                <p className="md:hidden text-[10px] text-slate-400 uppercase font-bold">Market Value</p>
+                <p className="hidden md:block text-[10px] text-slate-400 uppercase font-bold mb-1">Market Value</p>
                 {isAdvisor && portfolio.approval_status === 'Pending' ? (
                   <div className="flex items-center gap-1">
-                    <span className="text-sm font-bold text-slate-500">$</span>
+                    <span className="text-xs sm:text-sm font-bold text-slate-500">$</span>
                     <input
                       type="number"
                       value={holding.allocated_amount}
                       onChange={(e) => handleUpdateHolding(index, { allocated_amount: parseFloat(e.target.value) || 0 })}
-                      className="w-28 bg-slate-50 border border-slate-200 rounded-md text-right font-mono p-1 text-sm font-bold text-slate-900"
+                      className="w-24 sm:w-28 bg-slate-50 border border-slate-200 rounded-md text-right font-mono p-1 text-xs sm:text-sm font-bold text-slate-900"
                     />
                   </div>
                 ) : (
-                  <p className="text-base md:text-lg font-mono font-bold text-slate-900">${holding.allocated_amount.toLocaleString()}</p>
+                  <p className="text-sm sm:text-lg font-mono font-bold text-slate-900">${holding.allocated_amount.toLocaleString()}</p>
                 )}
               </div>
 
               {/* Units & Price */}
-              <div className="flex md:flex-col justify-between md:justify-start items-center md:items-end text-xs font-mono text-slate-500 min-w-[120px] w-full md:w-auto border-t md:border-t-0 border-slate-100 pt-4 md:pt-0 mt-4 md:mt-0">
-                <p className="md:hidden text-xs text-slate-400 uppercase font-bold">Details</p>
+              <div className="flex md:flex-col justify-between md:justify-start items-center md:items-end text-[10px] font-mono text-slate-500 min-w-[120px] w-full md:w-auto border-t md:border-t-0 border-slate-100 pt-3 md:pt-0 mt-1 md:mt-0">
+                <p className="md:hidden text-[10px] text-slate-400 uppercase font-bold">Details</p>
                 <div className="flex flex-col md:items-end">
                   <span>UNITS: <span className='font-semibold text-slate-600'>{holding.units.toFixed(4)}</span></span>
                   <span>PRICE: <span className='font-semibold text-slate-600'>${holding.security?.current_price?.toLocaleString() || '0'}</span></span>
@@ -335,7 +351,7 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole, client 
             
             {/* Actions */}
             {isAdvisor && (
-              <div className="w-full md:w-auto md:ml-auto border-t md:border-t-0 border-slate-100 pt-4 md:pt-0 mt-4 md:mt-0 flex justify-end">
+              <div className="w-full md:w-auto md:ml-auto border-t md:border-t-0 border-slate-100 pt-3 md:pt-0 mt-1 md:mt-0 flex justify-end">
                 <button
                   onClick={() => setHoldingToDelete(index)}
                   className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"

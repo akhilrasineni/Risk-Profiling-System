@@ -6,6 +6,13 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserSession } from '../types';
 
+/**
+ * LoginView component provides a simple login interface for advisors and clients.
+ * It handles user authentication and session management.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the login view.
+ */
 export default function LoginView({ onLogin }: { onLogin: (user: UserSession) => void }) {
   const [userId, setUserId] = useState('Rahul Mehta');
   const [password, setPassword] = useState('1234');

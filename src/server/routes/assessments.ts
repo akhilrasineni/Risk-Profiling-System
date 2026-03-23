@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { supabase } from '../../db/supabase.ts';
+import { scoringService } from '../../services/scoringService.ts';
 
 const router = Router();
 
@@ -37,6 +38,31 @@ router.post("/:id/finalize", async (req, res) => {
   }
 });
 
+// Deterministic Scoring
+router.post("/:id/deterministic-scoring", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const analysis = await scoringService.calculateDeterministicScore(id);
+
+    // Save the analysis to dual_scoring_analysis column for backward compatibility
+    const { data, error } = await supabase
+      .from('risk_assessments')
+      .update({ dual_scoring_analysis: analysis, risk_category: analysis.risk_category })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      return res.json({ status: "ok", data: analysis, message: "Analysis completed but not saved to DB (column missing)" });
+    }
+
+    res.json({ status: "ok", data: analysis });
+  } catch (error: any) {
+    
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 // Save consistency analysis
 router.post("/:id/consistency", async (req, res) => {
   try {
@@ -59,35 +85,8 @@ router.post("/:id/consistency", async (req, res) => {
   }
 });
 
-// Save dual scoring analysis
-router.post("/:id/dual-scoring", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { analysis } = req.body;
-
-    // We'll try to save to dual_scoring_analysis column. 
-    // If it doesn't exist, we'll just return success to avoid breaking the UI, 
-    // but the data won't persist until the user adds the column.
-    const { data, error } = await supabase
-      .from('risk_assessments')
-      .update({ dual_scoring_analysis: analysis })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      return res.json({ status: "ok", message: "Analysis completed but not saved to DB (column missing)" });
-    }
-
-    res.json({ status: "ok", data });
-  } catch (error: any) {
-    
-    res.status(500).json({ status: "error", message: error.message });
-  }
-});
-
 // Save behavioral bias analysis
-router.post("/:id/behavioral-biases", async (req, res) => {
+router.post("/:id/behavioral-bias", async (req, res) => {
   try {
     const { id } = req.params;
     const { analysis } = req.body;
@@ -95,54 +94,6 @@ router.post("/:id/behavioral-biases", async (req, res) => {
     const { data, error } = await supabase
       .from('risk_assessments')
       .update({ behavioral_bias_analysis: analysis })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      return res.json({ status: "ok", message: "Analysis completed but not saved to DB (column missing)" });
-    }
-
-    res.json({ status: "ok", data });
-  } catch (error: any) {
-    
-    res.status(500).json({ status: "error", message: error.message });
-  }
-});
-
-// Save risk probability analysis
-router.post("/:id/risk-probabilities", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { analysis } = req.body;
-
-    const { data, error } = await supabase
-      .from('risk_assessments')
-      .update({ risk_probability_analysis: analysis })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      return res.json({ status: "ok", message: "Analysis completed but not saved to DB (column missing)" });
-    }
-
-    res.json({ status: "ok", data });
-  } catch (error: any) {
-    
-    res.status(500).json({ status: "error", message: error.message });
-  }
-});
-
-// Save AI analysis manually triggered by advisor
-router.post("/:id/ai-analysis", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { ai_behavior_summary, ai_confidence_score } = req.body;
-
-    const { data, error } = await supabase
-      .from('risk_assessments')
-      .update({ ai_behavior_summary, ai_confidence_score })
       .eq('id', id)
       .select()
       .single();
@@ -170,13 +121,30 @@ router.post("/:id/reject", async (req, res) => {
 
     if (fetchError || !assessment) throw new Error("Assessment not found");
 
-    // 2. Delete the assessment
+    // 2. Get dependent IPS documents to delete their target allocations
+    const { data: ipsDocs } = await supabase
+      .from('ips_documents')
+      .select('id')
+      .eq('risk_assessment_id', id);
+
+    if (ipsDocs && ipsDocs.length > 0) {
+      const ipsIds = ipsDocs.map(doc => doc.id);
+      await supabase.from('target_allocations').delete().in('ips_id', ipsIds);
+      await supabase.from('ips_documents').delete().in('id', ipsIds);
+    }
+
+    // 3. Delete dependent records
+    await supabase.from('risk_assessment_responses').delete().eq('risk_assessment_id', id);
+    await supabase.from('risk_factor_breakdown').delete().eq('risk_assessment_id', id);
+    await supabase.from('risk_dual_scores').delete().eq('risk_assessment_id', id);
+
+    // 4. Delete the assessment
     await supabase
       .from('risk_assessments')
       .delete()
       .eq('id', id);
 
-    // 3. Reset the client's completion flag so they can retake it
+    // 5. Reset the client's completion flag so they can retake it
     await supabase
       .from('clients')
       .update({ risk_assessment_completed: false })

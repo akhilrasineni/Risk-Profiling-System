@@ -248,19 +248,7 @@ router.post("/submit", async (req, res) => {
       }
     }
 
-    // 4. Use AI Summary and Confidence from payload
-    const ai_behavior_summary = payload.ai_behavior_summary || "";
-    const ai_confidence_score = payload.ai_confidence_score || 0;
-
-    // Append Suitability Analysis to the summary for persistence
-    const suitabilityAnalysis = {
-      willingness: Math.round(willingness_score),
-      ability: Math.round(ability_score),
-      knockout: is_knockout_conservative
-    };
-    const enhanced_summary = `${ai_behavior_summary}\n\n[SUITABILITY_ANALYSIS]:${JSON.stringify(suitabilityAnalysis)}`;
-
-    // 5. Insert into risk_assessments
+    // 4. Insert into risk_assessments
     const { data: assessment, error: assessmentError } = await supabase
       .from('risk_assessments')
       .insert({
@@ -270,9 +258,7 @@ router.post("/submit", async (req, res) => {
         normalized_score,
         risk_category,
         finalized_by_advisor: false,
-        finalized_at: null,
-        ai_behavior_summary: enhanced_summary,
-        ai_confidence_score
+        finalized_at: null
       })
       .select()
       .single();

@@ -1,14 +1,29 @@
 import { useState, useRef, useEffect, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
+/**
+ * Props for the Tooltip component.
+ */
 interface TooltipProps {
+  /** The content to be displayed within the tooltip. */
   content: ReactNode;
+  /** The element that triggers the tooltip on hover. */
   children: ReactNode;
+  /** Optional CSS class name for the tooltip container. */
   className?: string;
+  /** Horizontal alignment of the tooltip relative to the trigger. Defaults to 'center'. */
   alignment?: 'left' | 'center' | 'right';
+  /** Vertical position of the tooltip relative to the trigger. Defaults to 'top'. */
   position?: 'top' | 'bottom';
 }
 
+/**
+ * Tooltip component provides a simple way to display additional information on hover.
+ * It uses React Portals to ensure the tooltip is rendered above other elements.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the tooltip.
+ */
 export default function Tooltip({ content, children, className = '', alignment = 'center', position = 'top' }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });

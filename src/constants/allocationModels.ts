@@ -1,17 +1,29 @@
 export const ALLOCATION_MODELS = {
-  Conservative: {
+  "Conservative": {
     Equity: 30,
     Debt: 60,
     Alternatives: 10,
     Rebalance: 'Semi-Annual'
   },
-  Moderate: {
+  "Moderately Conservative": {
+    Equity: 40,
+    Debt: 50,
+    Alternatives: 10,
+    Rebalance: 'Semi-Annual'
+  },
+  "Moderate": {
     Equity: 50,
     Debt: 40,
     Alternatives: 10,
     Rebalance: 'Quarterly'
   },
-  Aggressive: {
+  "Moderately Aggressive": {
+    Equity: 60,
+    Debt: 30,
+    Alternatives: 10,
+    Rebalance: 'Quarterly'
+  },
+  "Aggressive": {
     Equity: 70,
     Debt: 20,
     Alternatives: 10,

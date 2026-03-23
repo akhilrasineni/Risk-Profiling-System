@@ -65,9 +65,15 @@ const AIErrorDisplay = ({ error, onRetry }: { error: string, onRetry?: () => voi
   );
 };
 
+/**
+ * Props for the RiskProfileModal component.
+ */
 interface RiskProfileModalProps {
+  /** The client object whose risk profile is being managed. */
   client: Client;
+  /** Callback function to close the modal. */
   onClose: () => void;
+  /** Optional callback function to be executed on successful completion of a profile action. */
   onSuccess?: () => void;
 }
 
@@ -94,32 +100,52 @@ const MissingDataModal = ({ description, onClose, onSubmit }: { description: str
   );
 };
 
+/**
+ * RiskProfileModal component provides a multi-tabbed interface for advisors to manage a client's risk profile.
+ * It includes tabs for viewing/analyzing the risk profile, drafting/finalizing the Investment Policy Statement (IPS),
+ * and constructing/managing the client's portfolio. It leverages AI services for deep analysis and document generation.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the risk profile modal.
+ */
 export default function RiskProfileModal({ client, onClose, onSuccess }: RiskProfileModalProps) {
   const [activeTab, setActiveTab] = useState<'profile' | 'ips' | 'portfolio'>('profile');
   
   const [data, setData] = useState<any>(null);
+
+  const getDependentsCount = () => {
+    if (client.dependents !== null && client.dependents !== undefined) {
+      return client.dependents;
+    }
+    if (!data?.responses) return '—';
+    
+    const dependentResponse = data.responses.find((r: any) => {
+      const qText = (r.risk_questions?.question_text || r.question_text || '').toLowerCase();
+      return qText.includes('dependent') || qText.includes('rely on your income');
+    });
+    
+    if (dependentResponse) {
+      const optionText = (dependentResponse.risk_answer_options?.option_text || dependentResponse.option_text || '');
+      const match = optionText.match(/\d+/);
+      if (match) return parseInt(match[0]);
+      if (optionText.toLowerCase().includes('none') || optionText.toLowerCase() === '0') return 0;
+    }
+    
+    return '—';
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [analysis, setAnalysis] = useState<{
-    consistency_score: number;
     stability_flag: string;
     contradictions_detected: string[];
     explanation: string;
   } | null>(null);
   const [dualScoring, setDualScoring] = useState<any>(null);
-  const [behavioralBiases, setBehavioralBiases] = useState<any>(null);
-  const [riskClassification, setRiskClassification] = useState<any>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzingDual, setAnalyzingDual] = useState(false);
-  const [analyzingBiases, setAnalyzingBiases] = useState(false);
-  const [analyzingClassification, setAnalyzingClassification] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [dualError, setDualError] = useState<string | null>(null);
-  const [biasesError, setBiasesError] = useState<string | null>(null);
-  const [classificationError, setClassificationError] = useState<string | null>(null);
-  const [analyzingSummary, setAnalyzingSummary] = useState(false);
-  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   const [overrideMode, setOverrideMode] = useState<boolean>(false);
   const [overrideCategory, setOverrideCategory] = useState<string>('');
@@ -127,11 +153,15 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   const [finalizing, setFinalizing] = useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
-  const [showBehavioral, setShowBehavioral] = useState(true);
   const [showDualScoring, setShowDualScoring] = useState(false);
   const [showConsistency, setShowConsistency] = useState(false);
-  const [showBiases, setShowBiases] = useState(false);
-  const [showClassification, setShowClassification] = useState(false);
+  const [showBiasAnalysis, setShowBiasAnalysis] = useState(true);
+  const [analyzingBiases, setAnalyzingBiases] = useState(false);
+  const [biasError, setBiasError] = useState<string | null>(null);
+  const [biasAnalysis, setBiasAnalysis] = useState<{
+    biases: { bias_name: string; likelihood: string; description: string }[];
+    dominant_pattern: string;
+  } | null>(null);
   
   const [generatingIPS, setGeneratingIPS] = useState(false);
   const [ipsError, setIpsError] = useState<string | null>(null);
@@ -142,6 +172,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
   const [driftEvents, setDriftEvents] = useState<DriftEvent[]>([]);
   const [selectedDriftEvent, setSelectedDriftEvent] = useState<DriftEvent | null>(null);
+  const [missingDataInfo, setMissingDataInfo] = useState<{description: string} | null>(null);
   const { model: selectedModel, updateModel: setSelectedModel } = useAIModel();
 
   useEffect(() => {
@@ -204,6 +235,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
       const result = await aiService.analyzeInconsistencies(
         targetData.risk_category,
         targetData.responses,
+        client,
         selectedModel
       );
       setAnalysis(result);
@@ -240,177 +272,67 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     setDualError(null);
     setShowDualScoring(true);
     try {
-      const result = await aiService.analyzeDualScoring(
-        client,
-        targetData.responses,
-        selectedModel
-      );
-      setDualScoring(result);
-
-      // Save to DB
-      try {
-        await fetch(`/api/assessments/${targetData.id}/dual-scoring`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysis: result })
-        });
-      } catch (saveErr) {
-        
+      const response = await fetch(`/api/assessments/${targetData.id}/deterministic-scoring`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to calculate deterministic score');
       }
+      
+      const resultData = await response.json();
+      if (resultData.status === 'error') {
+        throw new Error(resultData.message);
+      }
+      
+      setDualScoring(resultData.data);
     } catch (err: any) {
       
-      setDualError(err.message || 'Network error occurred during dual scoring analysis');
+      setDualError(err.message || 'Network error occurred during deterministic scoring');
     } finally {
       setAnalyzingDual(false);
     }
   };
 
-  const handleBehavioralBiases = async (assessmentData?: any, force: boolean = false) => {
+  const handleAnalyzeBiases = async (assessmentData?: any, force: boolean = false) => {
     const targetData = assessmentData || data;
     if (!targetData) return;
 
     if (!force && targetData.behavioral_bias_analysis && !analyzingBiases) {
-      setBehavioralBiases(targetData.behavioral_bias_analysis);
-      setShowBiases(true);
+      setBiasAnalysis(targetData.behavioral_bias_analysis);
+      setShowBiasAnalysis(true);
       return;
     }
 
     setAnalyzingBiases(true);
-    setBiasesError(null);
-    setShowBiases(true);
+    setBiasError(null);
+    setShowBiasAnalysis(true);
     try {
       const result = await aiService.analyzeBehavioralBiases(
         targetData.responses,
+        client,
         selectedModel
       );
-      setBehavioralBiases(result);
+      setBiasAnalysis(result);
 
-      // Save to DB
+      // Save the analysis back to the database
       try {
-        await fetch(`/api/assessments/${targetData.id}/behavioral-biases`, {
+        await fetch(`/api/assessments/${targetData.id}/behavioral-bias`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ analysis: result })
         });
       } catch (saveErr) {
-        
+        console.error("Failed to save behavioral bias analysis:", saveErr);
       }
     } catch (err: any) {
-      
-      setBiasesError(err.message || 'Network error occurred during behavioral bias analysis');
+      setBiasError(err.message || 'Network error occurred during behavioral bias analysis');
     } finally {
       setAnalyzingBiases(false);
     }
   };
 
-  const [missingDataInfo, setMissingDataInfo] = useState<{description: string} | null>(null);
-
-  const handleRiskClassification = async (assessmentData?: any, force: boolean = false) => {
-    const targetData = assessmentData || data;
-    if (!targetData) return;
-
-    if (!force && targetData.risk_probability_analysis && !analyzingClassification) {
-      setRiskClassification(targetData.risk_probability_analysis);
-      setShowClassification(true);
-      return;
-    }
-
-    setAnalyzingClassification(true);
-    setClassificationError(null);
-    setShowClassification(true);
-    try {
-      const result = await aiService.analyzeRiskProbabilities(
-        targetData.responses,
-        selectedModel
-      );
-      setRiskClassification(result);
-
-      // Save to DB
-      try {
-        await fetch(`/api/assessments/${targetData.id}/risk-probabilities`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysis: result })
-        });
-      } catch (saveErr) {
-        
-      }
-    } catch (err: any) {
-      
-      try {
-        const errorObj = JSON.parse(err.message);
-        if (errorObj.type === "INCOMPLETE_DATA") {
-          setMissingDataInfo({ description: errorObj.message });
-          setClassificationError(null);
-        } else {
-          setClassificationError(err.message || 'Network error occurred during risk classification analysis');
-        }
-      } catch (e) {
-        setClassificationError(err.message || 'Network error occurred during risk classification analysis');
-      }
-    } finally {
-      setAnalyzingClassification(false);
-    }
-  };
-
-  const handleRunAIAnalysis = async () => {
-    if (!data) return;
-    setAnalyzingSummary(true);
-    setSummaryError(null);
-    try {
-      // Fetch questionnaire
-      let qRes;
-      if (data.questionnaire_id && data.questionnaire_id !== 'undefined') {
-        qRes = await fetch(`/api/questionnaires/id/${data.questionnaire_id}`);
-      }
-      
-      let qData = qRes ? await qRes.json() : null;
-      
-      // Fallback if not found by ID or no ID present
-      if (!qData || !qData.data) {
-        qRes = await fetch(`/api/questionnaires/AFS-RP-2026-v1`);
-        qData = await qRes.json();
-      }
-      
-      if (!qData || !qData.data) throw new Error("Failed to fetch questionnaire");
-      const questionnaire = qData.data;
-
-      // Construct answers
-      const answers: Record<string, string> = {};
-      data.responses.forEach((r: any) => {
-        answers[r.question_id] = r.selected_option_id;
-      });
-
-      // Run AI
-      const analysis = await aiService.analyzeRiskAssessment(client, questionnaire, answers, selectedModel);
-      
-      const breakdown = {
-        consistency: analysis.consistency_score || 0,
-        boundary: 50, // Default since we don't have the full deterministic logic here
-        completion: 100, // Default
-        stability: analysis.response_stability || 0
-      };
-      const summaryWithBreakdown = `${analysis.behavioral_summary}\n\n[CONFIDENCE_BREAKDOWN]:${JSON.stringify(breakdown)}`;
-      const ai_confidence_score = analysis.reliability_score || 0;
-
-      // Update DB
-      const updateRes = await fetch(`/api/assessments/${data.id}/ai-analysis`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ai_behavior_summary: summaryWithBreakdown, ai_confidence_score })
-      });
-
-      if (!updateRes.ok) throw new Error("Failed to save AI analysis to database");
-      
-      const updatedData = await updateRes.json();
-      setData(updatedData.data);
-    } catch (err: any) {
-      
-      setSummaryError(err.message || 'Failed to run AI analysis');
-    } finally {
-      setAnalyzingSummary(false);
-    }
-  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -429,6 +351,16 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
           setData(jsonProfile.data);
           setOverrideCategory(jsonProfile.data.risk_category);
           fetchedProfileData = jsonProfile.data;
+          
+          if (jsonProfile.data.behavioral_bias_analysis) {
+            setBiasAnalysis(jsonProfile.data.behavioral_bias_analysis);
+          }
+          if (jsonProfile.data.consistency_analysis) {
+            setAnalysis(jsonProfile.data.consistency_analysis);
+          }
+          if (jsonProfile.data.dual_scoring_analysis) {
+            setDualScoring(jsonProfile.data.dual_scoring_analysis);
+          }
         } else {
           setError(jsonProfile.message || 'Failed to load profile');
         }
@@ -515,14 +447,6 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
     setGeneratingIPS(true);
     setIpsError(null);
     try {
-      // 1. Eligibility Check
-      const score = data.ai_confidence_score;
-      const normalizedScore = score > 1 ? score / 100 : score;
-      
-      if (normalizedScore < 0.65) {
-        throw new Error(`AI Confidence Score too low (${(normalizedScore * 100).toFixed(1)}%). Minimum 65% required.`);
-      }
-
       const riskCategory = data.risk_category as RiskCategory;
       const model = ALLOCATION_MODELS[riskCategory];
       if (!model) {
@@ -709,15 +633,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
 
   const isEligibleForIPS = data && data.finalized_by_advisor;
 
-  const confidenceScore = data ? (data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score) : 0;
-  const isLowConfidence = confidenceScore < 65;
 
-  // Force override mode if confidence is low and not finalized
-  useEffect(() => {
-    if (data && !data.finalized_by_advisor && isLowConfidence) {
-      setOverrideMode(true);
-    }
-  }, [data, isLowConfidence]);
 
   return (
     <motion.div 
@@ -863,7 +779,26 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                             <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-white border border-white/10 group-hover:scale-110 transition-transform">
                               <ShieldCheck className="w-5 h-5" />
                             </div>
-                            <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Risk Classification</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Risk Classification</span>
+                              <Tooltip alignment="left" content={
+                                <div className="text-left space-y-1">
+                                  <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Risk Profile Analysis</p>
+                                  <div className="text-[10px] text-slate-300 space-y-2">
+                                    <p>The system determines the optimal risk category by synthesizing multiple data dimensions:</p>
+                                    <ul className="list-disc pl-3 space-y-1">
+                                      <li><span className="text-white font-semibold">Willingness:</span> Psychological comfort with volatility from behavioral questions.</li>
+                                      <li><span className="text-white font-semibold">Ability:</span> Financial capacity based on Net Worth, Income, and Time Horizon.</li>
+                                      <li><span className="text-white font-semibold">Context:</span> Age, dependents, and stated financial goals.</li>
+                                    </ul>
+                                  </div>
+                                </div>
+                              }>
+                                <div className="p-1 bg-white/10 text-slate-400 rounded border border-white/10 cursor-help hover:text-white transition-colors">
+                                  <Info className="w-3 h-3" />
+                                </div>
+                              </Tooltip>
+                            </div>
                           </div>
                           <h2 className="text-6xl md:text-7xl font-display font-bold mb-4 tracking-tighter">
                             {data.advisor_override_category || data.risk_category}
@@ -912,14 +847,24 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                       </div>
 
                       {/* Quick Stats Column */}
-                      <div className="flex flex-col gap-4">
-                        <div className="flex-1 bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm flex flex-col justify-center group hover:border-blue-200 transition-colors">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
+                        <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm flex flex-col justify-center group hover:border-blue-200 transition-colors">
                           <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-2">Net Worth</p>
                           <p className="text-2xl font-display font-bold text-slate-900 group-hover:text-blue-600 transition-colors">${client.net_worth?.toLocaleString() || '—'}</p>
                         </div>
-                        <div className="flex-1 bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm flex flex-col justify-center group hover:border-emerald-200 transition-colors">
+                        <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm flex flex-col justify-center group hover:border-emerald-200 transition-colors">
                           <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-2">Income</p>
                           <p className="text-2xl font-display font-bold text-slate-900 group-hover:text-emerald-600 transition-colors">${client.annual_income?.toLocaleString() || '—'}</p>
+                        </div>
+                        <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm flex flex-col justify-center group hover:border-indigo-200 transition-colors">
+                          <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-2">Age</p>
+                          <p className="text-2xl font-display font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                            {client.dob ? (new Date().getFullYear() - new Date(client.dob).getFullYear()) : '—'}
+                          </p>
+                        </div>
+                        <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm flex flex-col justify-center group hover:border-violet-200 transition-colors">
+                          <p className="text-[10px] font-bold text-violet-500 uppercase tracking-widest mb-2">Dependents</p>
+                          <p className="text-2xl font-display font-bold text-slate-900 group-hover:text-violet-600 transition-colors">{getDependentsCount()}</p>
                         </div>
                       </div>
                     </div>
@@ -971,32 +916,13 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                     </div>
                   </div>
 
-                  {/* SECTION: AI INSIGHTS & ANALYSIS */}
+                  {/* SECTION: ADVANCED ANALYSIS & INSIGHTS */}
                   <div className="space-y-6 pt-6 border-t border-slate-100">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="w-1 h-6 bg-violet-600 rounded-full" />
-                        <h3 className="text-lg font-display font-bold text-slate-900 tracking-tight">AI Insights & Analysis</h3>
+                        <h3 className="text-lg font-display font-bold text-slate-900 tracking-tight">Advanced Analysis & Insights</h3>
                       </div>
-                      <Tooltip alignment="right" content={
-                        <div className="text-left space-y-2">
-                          <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">AI Analysis Engine</p>
-                          <p className="text-xs text-slate-300">These insights are generated using Gemini 1.5 Pro by cross-referencing behavioral responses with financial constraints.</p>
-                          <div className="pt-2">
-                            <p className="text-[10px] font-bold text-white uppercase tracking-widest mb-1">Data Used:</p>
-                            <ul className="list-disc pl-4 space-y-1 text-[10px] text-slate-300">
-                              <li>{data.responses?.length || 0} Questionnaire Responses</li>
-                              <li>Financial Constraints (Tax, Liquidity)</li>
-                              <li>Client Net Worth & Income</li>
-                            </ul>
-                          </div>
-                        </div>
-                      }>
-                        <div className="flex items-center gap-2 px-3 py-1 bg-violet-50 text-violet-600 text-[10px] font-bold rounded-full border border-violet-100 uppercase shadow-sm cursor-help">
-                          <BrainCircuit className="w-3 h-3" />
-                          AI Powered
-                        </div>
-                      </Tooltip>
                     </div>
 
                     {/* Dual Risk Scoring Model (Capacity vs Tolerance) */}
@@ -1011,7 +937,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           </div>
                           <div className="text-left">
                             <h4 className="text-sm font-bold text-slate-900 tracking-tight">Risk Capacity vs Tolerance</h4>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Dual Scoring Model</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Deterministic Dual Scoring Model</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
@@ -1049,32 +975,30 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           )}
                           <Tooltip alignment="right" content={
                             <div className="text-left space-y-1">
-                              <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Dual Scoring Model</p>
+                              <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Dual Scoring Analysis Logic</p>
                               <div className="text-[10px] text-slate-300 space-y-2">
-                                <p>Analyzed: Separate financial risk into Capacity (Ability) and Tolerance (Willingness).</p>
+                                <p>This analysis evaluates the divergence between financial reality and psychological preference using:</p>
                                 <div>
-                                  <p className="font-bold text-white uppercase tracking-widest text-[9px] mb-0.5">Capacity Inputs:</p>
+                                  <p className="font-bold text-white uppercase tracking-widest text-[9px] mb-0.5">Capacity Data (Ability):</p>
                                   <ul className="list-disc pl-3 space-y-0.5">
-                                    <li>% of net worth invested</li>
-                                    <li>Emergency fund coverage</li>
-                                    <li>Income stability</li>
-                                    <li>Withdrawal rate & Horizon</li>
+                                    <li>Client Profile (Age, Dependents)</li>
+                                    <li>Financials (Net Worth, Annual Income)</li>
+                                    <li>Liquidity Needs & Tax Bracket</li>
                                   </ul>
                                 </div>
                                 <div>
-                                  <p className="font-bold text-white uppercase tracking-widest text-[9px] mb-0.5">Tolerance Inputs:</p>
+                                  <p className="font-bold text-white uppercase tracking-widest text-[9px] mb-0.5">Tolerance Data (Willingness):</p>
                                   <ul className="list-disc pl-3 space-y-0.5">
-                                    <li>Reaction to 20% drop</li>
-                                    <li>2-year market decline reaction</li>
-                                    <li>Volatility comfort</li>
-                                    <li>Experience & Loss history</li>
+                                    <li>Behavioral Questionnaire Responses</li>
+                                    <li>Risk vs Reward Trade-off Preferences</li>
+                                    <li>Historical Market Reaction Patterns</li>
                                   </ul>
                                 </div>
                               </div>
                             </div>
                           }>
                             <div className="p-1 bg-violet-50 text-violet-600 rounded border border-violet-100 shadow-sm cursor-help">
-                              <Sparkles className="w-3 h-3" />
+                              <Info className="w-3 h-3" />
                             </div>
                           </Tooltip>
                           <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${showDualScoring ? 'rotate-180' : ''}`} />
@@ -1250,13 +1174,14 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           )}
                           <Tooltip alignment="right" content={
                             <div className="text-left space-y-1">
-                              <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Consistency Scan</p>
+                              <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Consistency Scan Logic</p>
                               <div className="text-[10px] text-slate-300 space-y-1">
-                                <p className="font-bold text-white uppercase tracking-widest text-[9px]">Analyzed:</p>
+                                <p className="font-bold text-white uppercase tracking-widest text-[9px]">Data Points Analyzed:</p>
                                 <ul className="list-disc pl-3 space-y-0.5">
-                                  <li>All questionnaire responses</li>
-                                  <li>Question weights</li>
-                                  <li>Initial risk category score</li>
+                                  <li>Cross-referencing all 15+ Behavioral Responses</li>
+                                  <li>Alignment of Time Horizon with Risk Appetite</li>
+                                  <li>Consistency between Income Stability & Loss Tolerance</li>
+                                  <li>Validation of Stated Goals vs. Selected Risk Level</li>
                                 </ul>
                               </div>
                             </div>
@@ -1298,35 +1223,14 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                             <div className="space-y-6">
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-center items-center text-center group/card transition-all hover:border-blue-200">
-                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Consistency Score</p>
-                                  <div className="relative inline-flex items-center justify-center mb-4">
-                                    <svg className="w-20 h-20 transform -rotate-90">
-                                      <circle
-                                        cx="40"
-                                        cy="40"
-                                        r="34"
-                                        stroke="currentColor"
-                                        strokeWidth="6"
-                                        fill="transparent"
-                                        className="text-slate-100"
-                                      />
-                                      <motion.circle
-                                        cx="40"
-                                        cy="40"
-                                        r="34"
-                                        stroke="currentColor"
-                                        strokeWidth="6"
-                                        fill="transparent"
-                                        strokeDasharray={213.6}
-                                        initial={{ strokeDashoffset: 213.6 }}
-                                        animate={{ strokeDashoffset: 213.6 - (213.6 * (analysis.consistency_score / 100)) }}
-                                        transition={{ duration: 1.5, ease: "easeOut" }}
-                                        className={analysis.consistency_score >= 70 ? 'text-emerald-500' : analysis.consistency_score >= 40 ? 'text-amber-500' : 'text-red-500'}
-                                      />
-                                    </svg>
-                                    <span className="absolute text-xl font-display font-bold text-slate-900">{analysis.consistency_score}%</span>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Stability Status</p>
+                                  <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 mb-4">
+                                    <Activity className="w-8 h-8" />
                                   </div>
-                                  <p className={`text-[10px] font-bold uppercase tracking-widest ${analysis.consistency_score >= 70 ? 'text-emerald-600' : analysis.consistency_score >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
+                                  <p className={`text-sm font-bold uppercase tracking-widest ${
+                                    analysis.stability_flag === 'Stable' ? 'text-emerald-600' : 
+                                    analysis.stability_flag === 'Slightly Inconsistent' ? 'text-amber-600' : 'text-red-600'
+                                  }`}>
                                     {analysis.stability_flag}
                                   </p>
                                 </div>
@@ -1337,9 +1241,9 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                                       <AlertTriangle className="w-3 h-3" />
                                       Detected Contradictions
                                     </h5>
-                                    {analysis.contradictions_detected && analysis.contradictions_detected.length > 0 ? (
+                                    {analysis?.contradictions_detected && analysis.contradictions_detected.length > 0 ? (
                                       <div className="space-y-3">
-                                        {analysis.contradictions_detected.map((c: string, idx: number) => (
+                                        {analysis.contradictions_detected?.map((c: string, idx: number) => (
                                           <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start gap-3 group/item hover:border-amber-200 transition-colors">
                                             <div className="w-6 h-6 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 shrink-0 group-hover/item:scale-110 transition-transform">
                                               <AlertCircle className="w-3.5 h-3.5" />
@@ -1385,10 +1289,9 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                       )}
                     </div>
 
-                    {/* Behavioral Bias Detection */}
                     <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden transition-all hover:shadow-md">
                       <button 
-                        onClick={() => setShowBiases(!showBiases)}
+                        onClick={() => setShowBiasAnalysis(!showBiasAnalysis)}
                         className="w-full p-6 md:p-8 flex items-center justify-between hover:bg-slate-50/50 transition-colors group"
                       >
                         <div className="flex items-center gap-4">
@@ -1401,48 +1304,26 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
-                          {!behavioralBiases && !analyzingBiases && (
-                            <div
-                              role="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleBehavioralBiases();
-                              }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm active:scale-95 cursor-pointer"
-                            >
-                              <Sparkles className="w-3 h-3" />
-                              Run Analysis
-                            </div>
-                          )}
-                          {behavioralBiases && !analyzingBiases && (
-                            <div
-                              role="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleBehavioralBiases(undefined, true);
-                              }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
-                            >
-                              <BrainCircuit className="w-3 h-3" />
-                              Re-run
-                            </div>
-                          )}
-                          {analyzingBiases && (
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              Analyzing...
-                            </div>
-                          )}
+                          <div
+                            role="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAnalyzeBiases(undefined, true);
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            {biasAnalysis ? 'Re-run' : 'Run Analysis'}
+                          </div>
                           <Tooltip alignment="right" content={
                             <div className="text-left space-y-1">
-                              <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Bias Detection</p>
-                              <div className="text-[10px] text-slate-300 space-y-1">
-                                <p className="font-bold text-white uppercase tracking-widest text-[9px]">Analyzed:</p>
-                                <ul className="list-disc pl-3 space-y-0.5">
-                                  <li>Expected return vs experience</li>
-                                  <li>Reaction to drawdowns</li>
-                                  <li>Loss history & Volatility comfort</li>
-                                  <li>Derivative exposure</li>
+                              <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Behavioral Bias Analysis Logic</p>
+                              <div className="text-[10px] text-slate-300 space-y-2">
+                                <p>Detects psychological patterns in questionnaire responses that may lead to irrational decisions:</p>
+                                <ul className="list-disc pl-3 space-y-1">
+                                  <li><span className="text-white font-semibold">Loss Aversion:</span> Over-weighting potential losses vs gains.</li>
+                                  <li><span className="text-white font-semibold">Recency Bias:</span> Over-emphasizing recent market events.</li>
+                                  <li><span className="text-white font-semibold">Overconfidence:</span> Misjudging personal risk-taking ability.</li>
                                 </ul>
                               </div>
                             </div>
@@ -1451,348 +1332,81 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                               <Sparkles className="w-3 h-3" />
                             </div>
                           </Tooltip>
-                          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${showBiases ? 'rotate-180' : ''}`} />
+                          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${showBiasAnalysis ? 'rotate-180' : ''}`} />
                         </div>
                       </button>
 
-                      {showBiases && (
+                      {showBiasAnalysis && (
                         <div className="px-8 pb-8 animate-in slide-in-from-top-2 duration-300">
                           {analyzingBiases ? (
-                            <div className="space-y-4 py-2">
-                              <div className="h-4 bg-slate-100 rounded-full w-3/4 animate-pulse" />
-                              <div className="h-4 bg-slate-100 rounded-full w-full animate-pulse" />
-                              <div className="flex items-center gap-2 mt-6">
-                                <Loader2 className="w-4 h-4 animate-spin text-violet-600" />
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Analyzing biases...</span>
-                              </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+                              {[1, 2, 3, 4].map(i => (
+                                <div key={i} className="h-32 bg-slate-50 rounded-2xl animate-pulse border border-slate-100" />
+                              ))}
                             </div>
-                          ) : biasesError ? (
-                            <AIErrorDisplay error={biasesError} onRetry={handleBehavioralBiases} />
-                          ) : behavioralBiases ? (
+                          ) : biasError ? (
+                            <AIErrorDisplay error={biasError} onRetry={() => handleAnalyzeBiases(undefined, true)} />
+                          ) : biasAnalysis?.biases ? (
                             <div className="space-y-6">
-                              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                {[
-                                  { label: 'Overconfidence', key: 'overconfidence', icon: ShieldCheck, color: 'blue' },
-                                  { label: 'Loss Aversion', key: 'loss_aversion', icon: Activity, color: 'red' },
-                                  { label: 'Unrealistic Return', key: 'unrealistic_expectation', icon: AlertCircle, color: 'amber' },
-                                  { label: 'Recency Bias', key: 'recency_bias', icon: Search, color: 'violet' }
-                                ].map((bias) => (
-                                  <div key={bias.key} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm transition-all hover:border-blue-200 group/card">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {biasAnalysis.biases?.map((bias, idx) => (
+                                  <div key={idx} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm transition-all hover:border-violet-200 group/bias">
                                     <div className="flex items-center justify-between mb-4">
-                                      <div className={`w-8 h-8 rounded-lg bg-${bias.color}-50 flex items-center justify-center text-${bias.color}-600 group-hover/card:scale-110 transition-transform`}>
-                                        <bias.icon className="w-4 h-4" />
-                                      </div>
-                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
-                                        behavioralBiases[bias.key] === 'High' 
-                                          ? 'bg-red-50 text-red-600 border-red-100' 
-                                          : behavioralBiases[bias.key] === 'Medium'
-                                          ? 'bg-amber-50 text-amber-600 border-amber-100'
-                                          : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                        bias.bias_name === 'OVERCONFIDENCE' ? 'bg-blue-50 text-blue-600' :
+                                        bias.bias_name === 'LOSS AVERSION' ? 'bg-rose-50 text-rose-600' :
+                                        bias.bias_name === 'UNREALISTIC RETURN' ? 'bg-amber-50 text-amber-600' :
+                                        'bg-violet-50 text-violet-600'
                                       }`}>
-                                        {behavioralBiases[bias.key]}
+                                        {bias.bias_name === 'OVERCONFIDENCE' && <ShieldCheck className="w-4 h-4" />}
+                                        {bias.bias_name === 'LOSS AVERSION' && <Activity className="w-4 h-4" />}
+                                        {bias.bias_name === 'UNREALISTIC RETURN' && <AlertTriangle className="w-4 h-4" />}
+                                        {bias.bias_name === 'RECENCY BIAS' && <Search className="w-4 h-4" />}
+                                      </div>
+                                      <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                        bias.likelihood === 'HIGH' ? 'bg-red-50 text-red-600 border border-red-100' :
+                                        bias.likelihood === 'MEDIUM' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                        'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                      }`}>
+                                        {bias.likelihood}
                                       </span>
                                     </div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{bias.label}</p>
-                                    <p className="text-xs font-bold text-slate-900">Likelihood</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{bias.bias_name}</p>
+                                    
+                                    <div className="mt-3 pt-3 border-t border-slate-100">
+                                      <p className="text-xs text-slate-600 leading-relaxed">{bias.description}</p>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
 
-                              <div className="bg-slate-900 rounded-[2rem] p-8 text-white shadow-xl relative overflow-hidden group/card">
+                              <div className="bg-slate-900 rounded-2xl p-6 text-white relative overflow-hidden group">
                                 <div className="relative z-10">
-                                  <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <BrainCircuit className="w-4 h-4 text-violet-400" />
-                                    Dominant Behavioral Pattern
-                                  </h5>
-                                  <div className="prose prose-sm prose-invert max-w-none prose-p:leading-relaxed text-slate-200 font-medium">
-                                    <ReactMarkdown>{behavioralBiases.dominant_behavioral_pattern}</ReactMarkdown>
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <Sparkles className="w-4 h-4 text-violet-400" />
+                                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dominant Behavioral Pattern</h5>
                                   </div>
-                                </div>
-                                <div className="absolute -right-10 -top-10 w-40 h-40 bg-violet-500/10 rounded-full blur-3xl group-hover/card:bg-violet-500/20 transition-colors" />
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Probability-Based Risk Classification */}
-                    <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden transition-all hover:shadow-md">
-                      <button 
-                        onClick={() => setShowClassification(!showClassification)}
-                        className="w-full p-6 md:p-8 flex items-center justify-between hover:bg-slate-50/50 transition-colors group"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center text-white group-hover:scale-110 transition-transform">
-                            <ClipboardList className="w-5 h-5" />
-                          </div>
-                          <div className="text-left">
-                            <h4 className="text-sm font-bold text-slate-900 tracking-tight">Risk Probability Model</h4>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Multi-Class Classification</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          {!riskClassification && !analyzingClassification && (
-                            <div
-                              role="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRiskClassification();
-                              }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-800 transition-all shadow-sm active:scale-95 cursor-pointer"
-                            >
-                              <Sparkles className="w-3 h-3" />
-                              Run Model
-                            </div>
-                          )}
-                          {riskClassification && !analyzingClassification && (
-                            <div
-                              role="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRiskClassification(undefined, true);
-                              }}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition-all shadow-sm active:scale-95 cursor-pointer"
-                            >
-                              <ClipboardList className="w-3 h-3" />
-                              Re-run
-                            </div>
-                          )}
-                          {analyzingClassification && (
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider animate-pulse">
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              Calculating...
-                            </div>
-                          )}
-                          <Tooltip alignment="right" content={
-                            <div className="text-left space-y-1">
-                              <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Risk Probability Model</p>
-                              <p className="text-[10px] text-slate-300">Analyzed: Using all questionnaire inputs and behavioral signals to predict probability distribution.</p>
-                            </div>
-                          }>
-                            <div className="p-1 bg-violet-50 text-violet-600 rounded border border-violet-100 shadow-sm cursor-help">
-                              <Sparkles className="w-3 h-3" />
-                            </div>
-                          </Tooltip>
-                          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${showClassification ? 'rotate-180' : ''}`} />
-                        </div>
-                      </button>
-
-                      {showClassification && (
-                        <div className="px-8 pb-8 animate-in slide-in-from-top-2 duration-300">
-                          {analyzingClassification ? (
-                            <div className="space-y-4 py-2">
-                              <div className="h-4 bg-slate-100 rounded-full w-3/4 animate-pulse" />
-                              <div className="h-4 bg-slate-100 rounded-full w-full animate-pulse" />
-                              <div className="flex items-center gap-2 mt-6">
-                                <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Calculating probabilities...</span>
-                              </div>
-                            </div>
-                          ) : classificationError ? (
-                            <AIErrorDisplay error={classificationError} onRetry={handleRiskClassification} />
-                          ) : riskClassification ? (
-                            <div className="space-y-6">
-                              {/* Probability Bars */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                  {Object.entries(riskClassification.probabilities).map(([band, prob]: [string, any]) => (
-                                    <div key={band} className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm transition-all hover:border-blue-200 group/card">
-                                      <div className="flex items-center justify-between mb-6">
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{band}</p>
-                                        <span className={`text-xl font-display font-bold ${band === riskClassification.predicted_risk_band ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                          {prob}%
-                                        </span>
-                                      </div>
-                                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                        <motion.div 
-                                          initial={{ width: 0 }}
-                                          animate={{ width: `${prob}%` }}
-                                          transition={{ duration: 1.5, ease: "easeOut" }}
-                                          className={`h-full rounded-full ${
-                                            band === riskClassification.predicted_risk_band 
-                                              ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]' 
-                                              : 'bg-slate-300'
-                                          }`}
-                                        />
-                                      </div>
-                                      {band === riskClassification.predicted_risk_band && (
-                                        <div className="mt-4 p-2 bg-emerald-50 rounded-lg border border-emerald-100 text-center">
-                                          <p className="text-[10px] text-emerald-700 font-bold uppercase tracking-widest">Predicted Band</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-
-                              {/* Prediction Summary */}
-                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                                <div className="lg:col-span-1 bg-slate-900 text-white rounded-[2rem] p-8 flex flex-col justify-between shadow-2xl relative overflow-hidden group/card">
-                                  <div className="relative z-10">
-                                    <div className="flex items-center justify-between mb-8">
-                                      <div>
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Predicted Risk Band</p>
-                                        <h3 className="text-4xl font-display font-bold text-emerald-400 tracking-tighter">{riskClassification.predicted_risk_band}</h3>
-                                      </div>
-                                      <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-white border border-white/10 group-hover/card:scale-110 transition-transform">
-                                        <Target className="w-6 h-6" />
-                                      </div>
-                                    </div>
-                                    
-                                    <div className="pt-6 border-t border-white/10">
-                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Model Confidence</p>
-                                      <div className="flex items-center gap-4">
-                                        <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                                          <motion.div 
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${riskClassification.confidence_level}%` }}
-                                            transition={{ duration: 1.5, ease: "easeOut" }}
-                                            className="h-full bg-emerald-500 rounded-full" 
-                                          />
-                                        </div>
-                                        <span className="text-xl font-display font-bold">{riskClassification.confidence_level}%</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl group-hover/card:bg-emerald-500/20 transition-colors" />
-                                </div>
-                                <div className="lg:col-span-2 bg-slate-50 border border-slate-100 rounded-[2rem] p-8 relative overflow-hidden group/card">
-                                  <div className="relative z-10">
-                                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                      <Info className="w-4 h-4 text-blue-500" />
-                                      Classification Logic
-                                    </h5>
-                                    <div className="prose prose-sm max-w-none prose-slate prose-p:leading-relaxed text-slate-600 font-medium">
-                                      <ReactMarkdown>{riskClassification.explanation}</ReactMarkdown>
-                                    </div>
-                                  </div>
-                                  <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl group-hover/card:bg-blue-500/10 transition-colors" />
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {/* Behavioral Summary - Large Card */}
-                      <div className="md:col-span-2 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all hover:shadow-md">
-                        <button 
-                          onClick={() => setShowBehavioral(!showBehavioral)}
-                          className="w-full p-6 md:p-8 flex items-center justify-between hover:bg-slate-50/50 transition-colors group"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-2xl bg-violet-100 flex items-center justify-center text-violet-600 group-hover:scale-110 transition-transform">
-                              <Activity className="w-5 h-5" />
-                            </div>
-                            <div className="text-left">
-                              <h4 className="text-sm font-bold text-slate-900 tracking-tight">Behavioral Narrative</h4>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">AI Insights Summary</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <Tooltip alignment="right" content={
-                              <div className="text-left space-y-1">
-                                <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">AI Behavioral Dossier</p>
-                                <p className="text-[10px] text-slate-300">Generated by analyzing sentiment and patterns in questionnaire responses combined with financial capacity data.</p>
-                              </div>
-                            }>
-                              <div className="p-1 bg-violet-50 text-violet-600 rounded border border-violet-100 shadow-sm cursor-help">
-                                <Sparkles className="w-3 h-3" />
-                              </div>
-                            </Tooltip>
-                            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${showBehavioral ? 'rotate-180' : ''}`} />
-                          </div>
-                        </button>
-                        
-                        {showBehavioral && (
-                          <div className="px-8 pb-8 animate-in slide-in-from-top-2 duration-300">
-                            {(!data.ai_behavior_summary || data.ai_confidence_score === 0) ? (
-                              <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100 flex flex-col items-center text-center">
-                                <p className="text-amber-800 text-sm mb-4">AI analysis was not completed for this assessment.</p>
-                                <button
-                                  onClick={handleRunAIAnalysis}
-                                  disabled={analyzingSummary}
-                                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
-                                >
-                                  {analyzingSummary ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                                  {analyzingSummary ? 'Running Analysis...' : 'Run AI Analysis'}
-                                </button>
-                                {summaryError && <p className="text-red-600 text-xs mt-2">{summaryError}</p>}
-                              </div>
-                            ) : (
-                              <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 relative overflow-hidden group">
-                                <div className="prose prose-sm max-w-none prose-slate prose-p:leading-relaxed prose-strong:text-slate-900 relative z-10">
-                                  <p className="text-slate-700 text-lg leading-relaxed font-medium italic">
-                                    "{data.ai_behavior_summary.split('[')[0].trim()}"
+                                  <p className="text-sm font-medium leading-relaxed text-slate-200">
+                                    {biasAnalysis.dominant_pattern}
                                   </p>
                                 </div>
-                                <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-violet-500/5 rounded-full blur-2xl group-hover:bg-violet-500/10 transition-colors" />
+                                <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-violet-500/10 rounded-full blur-3xl" />
                               </div>
-                            )}
-                          </div>
-                        )}
-                        {/* Subtle background glow */}
-                        <div className="absolute -right-10 -top-10 w-32 h-32 bg-violet-100/50 rounded-full blur-2xl pointer-events-none"></div>
-                      </div>
-
-                      {/* Reliability Score Card */}
-                      <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm flex flex-col justify-between relative overflow-hidden group transition-all hover:shadow-md">
-                        <div className="relative z-10">
-                          <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-2 text-slate-400">
-                              <BrainCircuit className="w-5 h-5" />
-                              <span className="text-[10px] font-bold uppercase tracking-widest">Reliability Index</span>
                             </div>
-                            <Tooltip alignment="right" content={
-                              <div className="text-left space-y-1">
-                                <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">AI Confidence Index</p>
-                                <p className="text-[10px] text-slate-300">Calculated based on response stability, logical consistency, and data point depth.</p>
-                              </div>
-                            }>
-                              <div className="p-1 bg-violet-50 text-violet-600 rounded border border-violet-100 shadow-sm cursor-help">
-                                <Sparkles className="w-3 h-3" />
-                              </div>
-                            </Tooltip>
-                          </div>
-                          
-                          <div className="mb-6">
-                            {(!data.ai_behavior_summary || data.ai_confidence_score === 0) ? (
-                              <div className="text-amber-600 text-sm font-medium">
-                                Pending Analysis
-                              </div>
-                            ) : (
-                              <>
-                                <div className="flex items-baseline gap-1">
-                                  <p className="text-5xl font-display font-bold text-slate-900 tracking-tighter">
-                                    {data.ai_confidence_score <= 1 
-                                      ? Math.round(data.ai_confidence_score * 100) 
-                                      : Math.round(data.ai_confidence_score)}
-                                  </p>
-                                  <p className="text-xl font-display font-bold text-slate-300">%</p>
-                                </div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">AI Confidence Score</p>
-                              </>
-                            )}
-                          </div>
-
-                          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                            <motion.div 
-                              initial={{ width: 0 }}
-                              animate={{ width: `${(!data.ai_behavior_summary || data.ai_confidence_score === 0) ? 0 : (data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score)}%` }}
-                              transition={{ duration: 1.5, ease: "easeOut" }}
-                              className={`h-full rounded-full ${
-                                (!data.ai_behavior_summary || data.ai_confidence_score === 0)
-                                  ? 'bg-slate-300'
-                                  : (data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score) >= 65 
-                                    ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]' 
-                                    : 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
-                              }`} 
-                            />
-                          </div>
+                          ) : (
+                            <div className="text-center py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                              <BrainCircuit className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                              <p className="text-sm text-slate-500 font-medium">No behavioral analysis data available.</p>
+                              <button 
+                                onClick={() => handleAnalyzeBiases()}
+                                className="mt-4 px-6 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm"
+                              >
+                                Run Psychological Profiling
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-slate-50 rounded-full blur-3xl group-hover:bg-slate-100 transition-colors" />
-                      </div>
+                      )}
                     </div>
                   </div>
 
@@ -1819,10 +1433,8 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div className="space-y-4">
                               <label 
-                                onClick={() => {
-                                  if (!isLowConfidence) setOverrideMode(false);
-                                }} 
-                                className={`flex items-center gap-4 p-5 rounded-2xl border transition-all ${isLowConfidence ? 'opacity-50 cursor-not-allowed bg-slate-800/50 border-slate-700' : 'cursor-pointer group/label'} ${!overrideMode && !isLowConfidence ? 'bg-white/10 border-white/20' : 'bg-transparent border-white/5 hover:bg-white/5'}`}
+                                onClick={() => setOverrideMode(false)} 
+                                className={`flex items-center gap-4 p-5 rounded-2xl border transition-all cursor-pointer group/label ${!overrideMode ? 'bg-white/10 border-white/20' : 'bg-transparent border-white/5 hover:bg-white/5'}`}
                               >
                                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${!overrideMode ? 'border-blue-400 bg-blue-400' : 'border-slate-600'}`}>
                                   {!overrideMode && <div className="w-2 h-2 rounded-full bg-white" />}
@@ -1830,7 +1442,6 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                                 <div className="flex-1">
                                   <p className="text-sm font-bold">Confirm Calculated Profile</p>
                                   <p className="text-[10px] text-slate-400 font-medium">Use AI-recommended classification</p>
-                                  {isLowConfidence && <p className="text-[10px] text-amber-500 font-bold mt-1">Disabled due to low AI confidence</p>}
                                 </div>
                               </label>
 
@@ -1856,7 +1467,9 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                   >
                                     <option value="Conservative" className="text-slate-900">Conservative</option>
+                                    <option value="Moderately Conservative" className="text-slate-900">Moderately Conservative</option>
                                     <option value="Moderate" className="text-slate-900">Moderate</option>
+                                    <option value="Moderately Aggressive" className="text-slate-900">Moderately Aggressive</option>
                                     <option value="Aggressive" className="text-slate-900">Aggressive</option>
                                   </select>
                                   <textarea 
@@ -1872,7 +1485,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                             <div className="flex flex-col justify-end gap-4">
                               <div className="p-6 bg-white/5 rounded-3xl border border-white/10">
                                 <p className="text-xs text-slate-400 leading-relaxed mb-6">
-                                  By finalizing, you confirm that you have reviewed the AI-generated insights and behavioral narrative, and that the selected risk category is appropriate for the client's financial situation and goals.
+                                  By finalizing, you confirm that you have reviewed the AI-generated insights and that the selected risk category is appropriate for the client's financial situation and goals.
                                 </p>
                                 <div className="flex flex-col sm:flex-row gap-3">
                                   <button 
@@ -1906,13 +1519,9 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                           <div>
                             <h4 className="text-emerald-900 font-bold">Profile Finalized</h4>
                             <p className="text-emerald-700 text-sm">This risk profile has been confirmed and is now active.</p>
-                            {(data.advisor_override_reason || isLowConfidence) && (
+                            {data.advisor_override_reason && (
                               <div className="mt-3 p-3 bg-white/60 rounded-xl border border-emerald-200/50 text-sm text-emerald-800">
-                                {data.advisor_override_reason ? (
-                                  <p><strong>Override Reason:</strong> {data.advisor_override_reason}</p>
-                                ) : isLowConfidence ? (
-                                  <p><strong>Note:</strong> Finalized despite low AI confidence score ({confidenceScore.toFixed(0)}%).</p>
-                                ) : null}
+                                <p><strong>Override Reason:</strong> {data.advisor_override_reason}</p>
                               </div>
                             )}
                           </div>
@@ -1943,7 +1552,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                       )}
                       <IPSEditor 
                         ips={ipsDocument} 
-                        client={client} 
+                        client={{...client, dependents: getDependentsCount() === '—' ? client.dependents : getDependentsCount() as number}} 
                         onSave={handleSaveIPS} 
                         onAccept={handleAcceptIPS}
                         onRegenerate={() => handleGenerateIPS(ipsDocument.id)}
@@ -2008,7 +1617,7 @@ export default function RiskProfileModal({ client, onClose, onSuccess }: RiskPro
                       <p className="text-slate-500 max-w-md mb-8">
                         {isEligibleForIPS 
                           ? "The risk profile is finalized and ready. Generate a draft Investment Policy Statement to get started."
-                          : `You must finalize the risk profile with a high enough confidence score (${(data.ai_confidence_score <= 1 ? data.ai_confidence_score * 100 : data.ai_confidence_score).toFixed(0)}% < 65%) before generating an IPS.`}
+                          : "You must finalize the risk profile before generating an IPS."}
                       </p>
                       
                       {isEligibleForIPS && (

@@ -126,9 +126,11 @@ router.delete("/:id", async (req, res) => {
     // Delete IPS Documents
     await supabase.from('ips_documents').delete().eq('client_id', id);
 
-    // Delete Risk Assessment Responses
+    // Delete Risk Assessment Responses and Dual Scoring Data
     if (assessmentIds.length > 0) {
       await supabase.from('risk_assessment_responses').delete().in('risk_assessment_id', assessmentIds);
+      await supabase.from('risk_factor_breakdown').delete().in('risk_assessment_id', assessmentIds);
+      await supabase.from('risk_dual_scores').delete().in('risk_assessment_id', assessmentIds);
     }
 
     // Delete Risk Assessments

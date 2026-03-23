@@ -2,13 +2,27 @@ import React from 'react';
 import { X, DollarSign, SlidersHorizontal, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+/**
+ * Props for the DeleteConfirmationModal component.
+ */
 interface DeleteConfirmationModalProps {
+  /** The name of the holding/security being removed. */
   holdingName: string;
+  /** Callback function to close the modal. */
   onClose: () => void;
+  /** Callback function to handle selling the security. */
   onSell: () => void;
+  /** Callback function to handle rebalancing the proceeds. */
   onRebalance: () => void;
 }
 
+/**
+ * DeleteConfirmationModal component provides options for handling the removal of a security from a portfolio.
+ * It allows users to choose between selling the security and moving proceeds to cash, or rebalancing the proceeds.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the delete confirmation modal.
+ */
 export default function DeleteConfirmationModal({ holdingName, onClose, onSell, onRebalance }: DeleteConfirmationModalProps) {
   return (
     <motion.div 

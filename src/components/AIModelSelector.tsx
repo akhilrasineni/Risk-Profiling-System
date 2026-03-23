@@ -2,12 +2,25 @@ import { ChevronDown } from 'lucide-react';
 import { AIModel } from '../types';
 import { AI_MODEL_OPTIONS } from '../constants/aiModels';
 
+/**
+ * Props for the AIModelSelector component.
+ */
 interface AIModelSelectorProps {
+  /** The currently selected AI model. */
   selectedModel: AIModel;
+  /** Callback function when a new AI model is selected. */
   onSelectModel: (model: AIModel) => void;
+  /** Optional CSS class name for the selector container. */
   className?: string;
 }
 
+/**
+ * AIModelSelector component provides a dropdown for users to select an AI model.
+ * It uses the available models defined in the constants.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the AI model selector.
+ */
 export default function AIModelSelector({ selectedModel, onSelectModel, className = '' }: AIModelSelectorProps) {
   return (
     <div className={`relative ${className}`}>

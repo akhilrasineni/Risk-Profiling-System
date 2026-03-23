@@ -4,16 +4,31 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { DriftEvent } from '../types';
 import { aiService } from '../services/aiService';
 
+/**
+ * Props for the DriftAlert component.
+ */
 interface DriftAlertProps {
+  /** Array of drift events to display. */
   events: DriftEvent[];
+  /** Callback function when the details of a drift event are clicked. */
   onDetailsClick: (event: DriftEvent) => void;
+  /** Whether the alert is currently minimized. */
   isMinimized: boolean;
+  /** Callback function to toggle the minimized state of the alert. */
   onToggleMinimize: () => void;
+  /** Callback function to close the alert. */
   onClose: () => void;
 }
 
+/**
+ * DriftAlert component displays a notification when portfolio drift is detected.
+ * It shows the severity of the drift and provides a way to view detailed analysis.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the drift alert.
+ */
 export default function DriftAlert({ events, onDetailsClick, isMinimized, onToggleMinimize, onClose }: DriftAlertProps) {
-  if (events.length === 0) return null;
+  if (!events || events.length === 0) return null;
 
   const highestSeverity = events.some(e => e.severity === 'HIGH') ? 'HIGH' : 
                          events.some(e => e.severity === 'MEDIUM') ? 'MEDIUM' : 'LOW';
@@ -186,7 +201,22 @@ export function DriftDetailsModal({ event, onClose, onAnalysisComplete }: DriftD
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Drift Analysis</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Drift Analysis</h2>
+                <div className="group relative">
+                  <Info className="w-4 h-4 text-slate-400 cursor-help" />
+                  {/* Tooltip */}
+                  <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-slate-800 text-white text-[10px] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none text-left normal-case tracking-normal font-normal">
+                    <p className="font-bold mb-1 text-slate-200">Rebalance Analysis Logic:</p>
+                    <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                      <li><span className="font-semibold text-white">Drift Detection:</span> Actual allocation vs. IPS target bands</li>
+                      <li><span className="font-semibold text-white">Market Impact:</span> Price movement attribution</li>
+                      <li><span className="font-semibold text-white">AI Suggestion:</span> Tax-aware trade sizing and fund selection</li>
+                    </ul>
+                    <div className="absolute -bottom-1 left-2 w-2 h-2 bg-slate-800 rotate-45"></div>
+                  </div>
+                </div>
+              </div>
               <p className="text-sm text-slate-500 font-medium uppercase tracking-wider">{event.asset_class} • {event.severity} SEVERITY</p>
             </div>
           </div>
@@ -196,19 +226,19 @@ export function DriftDetailsModal({ event, onClose, onAnalysisComplete }: DriftD
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-8 pt-6 overflow-y-auto flex-1 custom-scrollbar">
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Actual</p>
-              <p className="text-xl font-display font-bold text-slate-900">{event.actual_percent}%</p>
+        <div className="p-6 sm:p-8 pt-4 sm:pt-6 overflow-y-auto flex-1 custom-scrollbar">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
+            <div className="p-3 sm:p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between sm:block items-center">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest sm:mb-1">Actual</p>
+              <p className="text-lg sm:text-xl font-display font-bold text-slate-900">{event.actual_percent}%</p>
             </div>
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Target</p>
-              <p className="text-xl font-display font-bold text-slate-900">{event.target_percent}%</p>
+            <div className="p-3 sm:p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between sm:block items-center">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest sm:mb-1">Target</p>
+              <p className="text-lg sm:text-xl font-display font-bold text-slate-900">{event.target_percent}%</p>
             </div>
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Band</p>
-              <p className="text-sm font-bold text-slate-900">{event.lower_band}% – {event.upper_band}%</p>
+            <div className="p-3 sm:p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between sm:block items-center">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest sm:mb-1">Band</p>
+              <p className="text-xs sm:text-sm font-bold text-slate-900">{event.lower_band}% – {event.upper_band}%</p>
             </div>
           </div>
 
@@ -257,7 +287,7 @@ export function DriftDetailsModal({ event, onClose, onAnalysisComplete }: DriftD
                     Recommendations
                   </h4>
                   <ul className="space-y-2">
-                    {analysis.recommendations.map((rec, i) => (
+                    {analysis.recommendations?.map((rec, i) => (
                       <li key={i} className="flex items-start gap-3 text-sm text-slate-600 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100/50">
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0"></div>
                         {rec}
@@ -281,10 +311,31 @@ export function DriftDetailsModal({ event, onClose, onAnalysisComplete }: DriftD
                       <p className="text-sm text-slate-600 mb-4">{rebalanceSuggestion.rebalance_summary}</p>
                       <h4 className="text-sm font-bold text-slate-900 mb-2">Suggestions</h4>
                       <ul className="space-y-2">
-                        {rebalanceSuggestion.suggestions.map((s: any, i: number) => (
-                          <li key={i} className="text-xs text-slate-600 bg-white p-3 rounded-xl border border-slate-100">
-                            <span className="font-bold">{s.security_name} ({s.ticker})</span>: {s.current_allocation}% → {s.suggested_allocation}%
-                            <p className="text-slate-500 mt-1">{s.action}</p>
+                        {rebalanceSuggestion.suggestions?.map((s: any, i: number) => (
+                          <li key={i} className="text-xs text-slate-600 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span className="font-bold text-slate-900">{s.security_name} ({s.ticker})</span>
+                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-bold uppercase tracking-wider">
+                                {s.asset_class}
+                              </span>
+                              {s.asset_class === event.asset_class && (
+                                <span className="text-red-600 font-bold text-[9px]">
+                                  (Drift: {event.drift_percent}%)
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] mb-2">
+                              <span className="text-slate-400 font-medium">Allocation:</span>
+                              <span className="font-mono">{s.current_allocation}%</span>
+                              <ChevronRight className="w-3 h-3 text-slate-300" />
+                              <span className="font-mono font-bold text-blue-600">{s.suggested_allocation}%</span>
+                            </div>
+                            <p className="text-slate-500 leading-relaxed">{s.action}</p>
+                            {s.is_ips_deviation && (
+                              <div className="mt-2 p-2 bg-amber-50 border border-amber-100 rounded-lg text-amber-800 text-[10px]">
+                                <span className="font-bold">IPS Deviation:</span> {s.deviation_reason}
+                              </div>
+                            )}
                           </li>
                         ))}
                       </ul>

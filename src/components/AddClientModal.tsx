@@ -2,18 +2,32 @@ import React, { useState } from 'react';
 import { AlertCircle, Loader2, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+/**
+ * Props for the AddClientModal component.
+ */
 interface AddClientModalProps {
+  /** The ID of the advisor who is adding the client. */
   advisorId: string;
+  /** Callback function to close the modal. */
   onClose: () => void;
+  /** Callback function to be executed when the client is successfully added. */
   onSuccess: () => void;
 }
 
+/**
+ * AddClientModal component provides a form for advisors to add new clients.
+ * It collects personal and financial information and submits it to the backend.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the add client modal.
+ */
 export default function AddClientModal({ advisorId, onClose, onSuccess }: AddClientModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     first_name: '', last_name: '', email: '', dob: '',
-    annual_income: '', net_worth: '', liquidity_needs: '', tax_bracket: ''
+    annual_income: '', net_worth: '', liquidity_needs: '', tax_bracket: '',
+    dependents: ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -31,6 +45,7 @@ export default function AddClientModal({ advisorId, onClose, onSuccess }: AddCli
       net_worth: formData.net_worth ? Number(formData.net_worth) : null,
       liquidity_needs: formData.liquidity_needs ? Number(formData.liquidity_needs) : null,
       tax_bracket: formData.tax_bracket ? Number(formData.tax_bracket) : null,
+      dependents: formData.dependents ? Number(formData.dependents) : 0,
     };
 
     try {
@@ -101,6 +116,10 @@ export default function AddClientModal({ advisorId, onClose, onSuccess }: AddCli
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Tax Bracket (%)</label>
               <input type="number" value={formData.tax_bracket} onChange={e => setFormData({...formData, tax_bracket: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Dependents</label>
+              <input type="number" value={formData.dependents} onChange={e => setFormData({...formData, dependents: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="0" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Annual Income ($)</label>

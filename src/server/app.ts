@@ -29,9 +29,9 @@ export async function createApp() {
           message: "Missing Supabase credentials in environment variables." 
         });
       }
-      const { error } = await supabase.from('clients').select('id').limit(1);
+      const { data, error } = await supabase.from('risk_questions').select('*');
       if (error) throw error;
-      res.json({ status: "ok", message: "Supabase connected" });
+      res.json({ status: "ok", message: "Supabase connected", questions: data.map(q => q.question_text) });
     } catch (error: any) {
       res.status(500).json({ status: "error", message: error.message });
     }

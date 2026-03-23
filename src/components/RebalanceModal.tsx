@@ -8,19 +8,35 @@ import Tooltip from './Tooltip';
 import AIModelSelector from './AIModelSelector';
 import { useAIModel } from '../hooks/useAIModel';
 
+/**
+ * Props for the RebalanceModal component.
+ */
 interface RebalanceModalProps {
+  /** The portfolio object to be rebalanced. */
   portfolio: Portfolio;
+  /** Array of all available securities. */
   securities: any[];
+  /** Callback function to close the modal. */
   onClose: () => void;
+  /** Callback function to save the updated portfolio holdings and cash balance. */
   onSave: (updatedHoldings: PortfolioHolding[], updatedCashBalance: number) => Promise<void>;
 }
 
+/**
+ * RebalanceModal component provides an interface for rebalancing a portfolio.
+ * It uses AI to suggest rebalance actions based on detected drift and the client's IPS.
+ * It also provides a visual representation of current vs. suggested allocations.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the rebalance modal.
+ */
 export default function RebalanceModal({ portfolio, securities, onClose, onSave }: RebalanceModalProps) {
   const [holdings, setHoldings] = useState<RebalanceHolding[]>(() => JSON.parse(JSON.stringify(portfolio.holdings?.filter(h => h.allocated_percent > 0) || [])));
   const [cashBalance, setCashBalance] = useState<number>(portfolio.cash_balance || 0);
   const [loading, setLoading] = useState(false);
   const [loadingAi, setLoadingAi] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<any>(null);
+  const [driftEvents, setDriftEvents] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { model: selectedModel, updateModel: setSelectedModel } = useAIModel();
 
@@ -30,6 +46,7 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
         const res = await fetch(`/api/drift/portfolio/${portfolio.id}`);
         const data = await res.json();
         if (data.status === 'ok' && data.data.length > 0) {
+          setDriftEvents(data.data);
           handleGenerateAISuggestions(data.data);
         }
       } catch (err) {
@@ -233,12 +250,16 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
             <div className="flex items-center justify-between">
               <Tooltip alignment="left" position="bottom" content={
                 <div className="text-left space-y-2">
-                  <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Rebalancing Engine</p>
-                  <ul className="list-disc pl-4 space-y-1 text-slate-300">
-                    <li><span className="text-white font-semibold">Drift Analysis:</span> Deviations &gt;{ (Array.isArray(portfolio.ips) ? portfolio.ips[0] : portfolio.ips)?.rebalancing_band_percent || 5}% from target</li>
-                    <li><span className="text-white font-semibold">Tax Efficiency:</span> Long-term vs. short-term gain minimization</li>
-                    <li><span className="text-white font-semibold">Market Context:</span> Volatility adjustment (VIX)</li>
-                  </ul>
+                  <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Rebalancing Analysis Logic</p>
+                  <div className="text-[10px] text-slate-300 space-y-2">
+                    <p>The AI generates rebalance suggestions by analyzing the intersection of:</p>
+                    <ul className="list-disc pl-4 space-y-1">
+                      <li><span className="text-white font-semibold">IPS Compliance:</span> Drift detection vs. { (Array.isArray(portfolio.ips) ? portfolio.ips[0] : portfolio.ips)?.rebalancing_band_percent || 5}% tolerance bands.</li>
+                      <li><span className="text-white font-semibold">Tax Awareness:</span> Minimizing realized gains by prioritizing specific lots (if available).</li>
+                      <li><span className="text-white font-semibold">Market Impact:</span> Execution cost estimation and liquidity constraints.</li>
+                      <li><span className="text-white font-semibold">Risk Profile:</span> Ensuring the final portfolio remains within the client's risk capacity.</li>
+                    </ul>
+                  </div>
                 </div>
               }>
                 <div className="flex items-center gap-3 cursor-help">
@@ -258,7 +279,7 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
                   className="w-48"
                 />
                 <button 
-                  onClick={() => handleGenerateAISuggestions([])}
+                  onClick={() => handleGenerateAISuggestions(driftEvents)}
                   disabled={loadingAi}
                   className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
                 >
@@ -302,23 +323,39 @@ export default function RebalanceModal({ portfolio, securities, onClose, onSave 
                 {Array.isArray(aiSuggestions.suggestions) && aiSuggestions.suggestions.length > 0 && (
                   <div className="space-y-2 mt-2 border-t border-blue-100 pt-2">
                     <p className="font-bold text-blue-800">Recommended Actions:</p>
-                    <ul className="list-disc pl-4 space-y-1">
-                      {aiSuggestions.suggestions.map((s: any, i: number) => (
-                        <li key={i}>
-                          <span className="font-semibold">
-                            {s.security_name} 
-                            {s.ticker && s.ticker !== 'undefined' && s.ticker !== 'N/A' ? ` (${s.ticker})` : ''}:
-                          </span> {s.action}
-                          <span className="ml-2 text-blue-600 font-mono">
-                            (Target: {s.suggested_allocation}%)
-                          </span>
-                          {s.is_ips_deviation && (
-                            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800">
-                              <span className="font-bold">IPS Deviation:</span> {s.deviation_reason}
+                    <ul className="list-disc pl-4 space-y-2">
+                      {aiSuggestions.suggestions.map((s: any, i: number) => {
+                        const drift = driftEvents.find(d => d.asset_class === s.asset_class);
+                        return (
+                          <li key={i} className="text-[11px]">
+                            <div className="flex flex-wrap items-center gap-x-2">
+                              <span className="font-bold text-blue-900">
+                                {s.security_name} 
+                                {s.ticker && s.ticker !== 'undefined' && s.ticker !== 'N/A' ? ` (${s.ticker})` : ''}
+                              </span>
+                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold uppercase tracking-wider">
+                                {s.asset_class}
+                              </span>
+                              {drift && (
+                                <span className="text-red-600 font-bold text-[9px]">
+                                  (Drift: {drift.drift_percent}%)
+                                </span>
+                              )}
                             </div>
-                          )}
-                        </li>
-                      ))}
+                            <p className="mt-0.5 text-slate-600">
+                              {s.action}
+                              <span className="ml-2 text-blue-600 font-mono font-bold">
+                                [Target: {s.suggested_allocation}%]
+                              </span>
+                            </p>
+                            {s.is_ips_deviation && (
+                              <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-[10px]">
+                                <span className="font-bold">IPS Deviation:</span> {s.deviation_reason}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}

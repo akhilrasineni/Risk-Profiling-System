@@ -1,14 +1,26 @@
 import { useState, useEffect } from 'react';
 import { ClipboardList, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { RiskQuestionnaire, RiskQuestion, QuestionnaireResponsePayload, Client } from '../types';
-import { aiService } from '../services/aiService';
 
+/**
+ * Props for the RiskQuestionnaireView component.
+ */
 interface RiskQuestionnaireViewProps {
+  /** The client object for whom the questionnaire is being filled. */
   client: Client;
+  /** Callback function to be executed when the questionnaire is successfully submitted. */
   onComplete: () => void;
+  /** Callback function to be executed when the user cancels the questionnaire. */
   onCancel: () => void;
 }
 
+/**
+ * RiskQuestionnaireView component provides a user interface for clients to complete a risk profiling questionnaire.
+ * It handles fetching the questionnaire data, managing user answers, calculating scores, and submitting the results.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the risk questionnaire view.
+ */
 export default function RiskQuestionnaireView({ client, onComplete, onCancel }: RiskQuestionnaireViewProps) {
   const [questionnaire, setQuestionnaire] = useState<RiskQuestionnaire & { questions: RiskQuestion[] } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,27 +76,7 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
     setError(null);
 
     try {
-      // 1. Generate AI Summary and components using AIService
-      let ai_behavior_summary = "";
-      let consistency_score = 0;
-      let response_stability = 0;
-      let reliability_score = 0;
-
-      try {
-        const analysis = await aiService.analyzeRiskAssessment(client, questionnaire, answers);
-        ai_behavior_summary = analysis.behavioral_summary;
-        consistency_score = analysis.consistency_score || 0;
-        response_stability = analysis.response_stability || 0;
-        reliability_score = analysis.reliability_score || 0;
-      } catch (aiErr) {
-        
-        ai_behavior_summary = "";
-        consistency_score = 0;
-        response_stability = 0;
-        reliability_score = 0;
-      }
-
-      // 2. Calculate Deterministic Components
+      // 1. Calculate Deterministic Components
       
       // Willingness vs Ability Separation
       let willingness_raw = 0;
@@ -160,29 +152,14 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
         boundary_distance_score = (dist / 0.35) * 100;
       }
 
-      // 3. Final Weighted Confidence Score - NOW 100% AI DRIVEN
-      // We use the AI's holistic reliability score directly
-      const ai_confidence_score = reliability_score;
-
-      // Store breakdown in the summary for the UI to parse
-      const breakdown = {
-        consistency: consistency_score,
-        boundary: boundary_distance_score,
-        completion: completion_quality,
-        stability: response_stability
-      };
-      const summaryWithBreakdown = `${ai_behavior_summary}\n\n[CONFIDENCE_BREAKDOWN]:${JSON.stringify(breakdown)}`;
-
-      // 4. Submit to backend
-      const payload: QuestionnaireResponsePayload & { ai_behavior_summary: string, ai_confidence_score: number } = {
+      // 2. Submit to backend
+      const payload: QuestionnaireResponsePayload = {
         client_id: client.id,
         questionnaire_id: questionnaire.id,
         responses: Object.entries(answers).map(([question_id, selected_option_id]) => ({
           question_id,
           selected_option_id: String(selected_option_id)
-        })),
-        ai_behavior_summary: summaryWithBreakdown,
-        ai_confidence_score
+        }))
       };
 
       const response = await fetch('/api/questionnaires/submit', {
@@ -258,18 +235,18 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
   }
 
   return (
-    <div className="max-w-4xl mx-auto py-8">
-      <div className="mb-8 flex items-start justify-between">
+    <div className="max-w-4xl mx-auto py-6 md:py-8 px-4 md:px-0">
+      <div className="mb-6 md:mb-8 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
-              <ClipboardList className="w-6 h-6" />
+            <div className="p-2 md:p-2.5 bg-blue-50 text-blue-600 rounded-lg md:rounded-xl">
+              <ClipboardList className="w-5 h-5 md:w-6 md:h-6" />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight">Risk Profiling Questionnaire</h1>
+            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Risk Profiling Questionnaire</h1>
           </div>
-          <p className="text-sm text-slate-500">Please answer the following questions to help us understand your investment risk tolerance.</p>
+          <p className="text-xs md:text-sm text-slate-500">Please answer the following questions to help us understand your investment risk tolerance.</p>
         </div>
-        <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-900 font-medium">
+        <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-900 font-medium self-start sm:self-auto">
           Cancel
         </button>
       </div>
@@ -281,19 +258,19 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
         </div>
       )}
 
-      <div className="space-y-6">
-        {questionnaire?.questions.map((question, index) => (
-          <div key={question.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-            <h3 className="text-lg font-medium mb-4">
+      <div className="space-y-4 md:space-y-6">
+        {questionnaire?.questions?.map((question, index) => (
+          <div key={question.id} className="bg-white rounded-xl md:rounded-2xl shadow-sm border border-slate-200 p-5 md:p-6">
+            <h3 className="text-base md:text-lg font-medium mb-4">
               <span className="text-slate-400 mr-2">{index + 1}.</span>
               {question.question_text}
             </h3>
             
-            <div className="space-y-3">
+            <div className="space-y-2.5 md:space-y-3">
               {question.options?.map((option) => (
                 <label 
                   key={option.id} 
-                  className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+                  className={`flex items-start gap-3 p-3.5 md:p-4 rounded-xl border cursor-pointer transition-all ${
                     answers[question.id] === option.id 
                       ? 'border-blue-500 bg-blue-50/30' 
                       : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
@@ -319,14 +296,14 @@ export default function RiskQuestionnaireView({ client, onComplete, onCancel }: 
         ))}
       </div>
 
-      <div className="mt-8 pt-6 border-t border-slate-200 flex items-center justify-between">
-        <p className="text-sm text-slate-500">
+      <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <p className="text-sm text-slate-500 font-medium">
           Answered: {Object.keys(answers).length} of {questionnaire?.questions.length || 0}
         </p>
         <button
           onClick={handleSubmit}
           disabled={submitting || Object.keys(answers).length !== (questionnaire?.questions.length || 0)}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-slate-100"
         >
           {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
           {submitting ? 'Submitting...' : 'Submit Profile'}

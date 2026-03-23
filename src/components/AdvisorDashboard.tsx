@@ -4,12 +4,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Client, UserSession, AIModel, DriftEvent } from '../types';
 import AddClientModal from './AddClientModal';
 import RiskProfileModal from './RiskProfileModal';
-import { aiService } from '../services/aiService';
 import AIModelSelector from './AIModelSelector';
 import { useAIModel } from '../hooks/useAIModel';
 import DriftAlert, { DriftDetailsModal } from './DriftAlert';
 import { supabase } from '../db/supabase';
 
+/**
+ * AdvisorDashboard component provides the main interface for financial advisors.
+ * It allows advisors to manage their clients, view risk profiles, monitor portfolio drift,
+ * and access AI-driven insights. It includes features for adding/deleting clients,
+ * selecting AI models, and responding to drift alerts.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the advisor dashboard.
+ */
 export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserSession, onLogout: () => void }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [clientPortfolios, setClientPortfolios] = useState<Record<string, string[]>>({}); // client_id -> portfolio_ids[]
@@ -149,46 +157,58 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
 
       {/* Header */}
       <header className="bg-white/70 backdrop-blur-xl border-b border-slate-200 sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
-              <Briefcase className="w-5 h-5" />
+        <div className="max-w-6xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="w-8 h-8 md:w-9 md:h-9 bg-blue-600 text-white rounded-lg md:rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
+              <Briefcase className="w-4 h-4 md:w-5 md:h-5" />
             </div>
-            <h1 className="font-display font-bold text-xl text-slate-900 tracking-tight">Advisor Portal</h1>
+            <h1 className="font-display font-bold text-lg md:text-xl text-slate-900 tracking-tight">Advisor Portal</h1>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 md:gap-4">
+            <div className="hidden sm:flex items-center gap-2">
               <BrainCircuit className="w-4 h-4 text-blue-600" />
               <AIModelSelector 
                 selectedModel={selectedModel} 
                 onSelectModel={setSelectedModel} 
-                className="w-56" 
+                className="w-40 md:w-56" 
               />
             </div>
-            <span className="text-sm text-slate-500 font-medium">Welcome, {advisor.name}</span>
+            <span className="hidden md:inline text-sm text-slate-500 font-medium">Welcome, {advisor.name}</span>
             
             <button onClick={onLogout} className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors" title="Sign Out">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
+        {/* Mobile AI Selector */}
+        <div className="sm:hidden px-4 py-2 border-t border-slate-100 bg-white/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BrainCircuit className="w-3.5 h-3.5 text-blue-600" />
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model</span>
+          </div>
+          <AIModelSelector 
+            selectedModel={selectedModel} 
+            onSelectModel={setSelectedModel} 
+            className="w-40" 
+          />
+        </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 relative z-10">
+      <main className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8 relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
             <div>
-              <h2 className="text-3xl font-display font-bold tracking-tight text-slate-900">Your Investors</h2>
+              <h2 className="text-2xl md:text-3xl font-display font-bold tracking-tight text-slate-900">Your Investors</h2>
               <p className="text-sm text-slate-500 mt-1">Manage your clients and view their profiles.</p>
             </div>
             
             <button 
               onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-100"
             >
               <UserPlus className="w-4 h-4" />
               Add Investor
@@ -202,7 +222,7 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
             </div>
           )}
 
-          {/* Clients Table */}
+          {/* Clients Table / Cards */}
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             {loading ? (
               <div className="p-12 flex justify-center">
@@ -215,102 +235,189 @@ export default function AdvisorDashboard({ advisor, onLogout }: { advisor: UserS
                 <p className="text-sm text-slate-500 mt-1">Get started by adding your first investor.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="px-6 py-4 font-medium">Name</th>
-                      <th className="px-6 py-4 font-medium">Email</th>
-                      <th className="px-6 py-4 font-medium">Income</th>
-                      <th className="px-6 py-4 font-medium">Net Worth</th>
-                      <th className="px-6 py-4 font-medium">Status</th>
-                      <th className="px-6 py-4 font-medium">Investor ID</th>
-                      <th className="px-6 py-4 font-medium text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {clients.map((client) => {
-                      const hasDrift = driftEvents.some(e => {
-                        const portfolioData = (e as any).portfolio;
-                        // If portfolioData is an array (e.g. from a previous join), take the first one
-                        const portfolio = Array.isArray(portfolioData) ? portfolioData[0] : portfolioData;
-                        const cid = portfolio?.client_id;
-                        
-                        return cid === client.id;
-                      });
-                      return (
-                        <tr 
-                          key={client.id} 
-                          className={`transition-all duration-500 ${
-                            hasDrift 
-                              ? 'animate-blink-red' 
-                              : 'hover:bg-slate-50/50'
-                          }`}
-                        >
-                          <td className="px-6 py-4 font-medium text-slate-900">
-                            <div className="flex items-center gap-2">
-                              {hasDrift && (
-                                <div className="relative flex h-3 w-3">
-                                  <span className="animate-pulse-ring absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                                </div>
-                              )}
-                              {client.first_name} {client.last_name}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-slate-500">{client.email}</td>
-                          <td className="px-6 py-4 text-slate-500">{client.annual_income ? `$${client.annual_income.toLocaleString()}` : '-'}</td>
-                          <td className="px-6 py-4 text-slate-500">{client.net_worth ? `$${client.net_worth.toLocaleString()}` : '-'}</td>
-                          <td className="px-6 py-4">
-                            {client.health_status === 'drift_detected' || hasDrift ? (
-                              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-600 text-white shadow-sm shadow-red-200">
-                                <AlertTriangle className="w-3 h-3" />
-                                Drift Detected
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                                Healthy
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <code className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 font-mono">{client.id}</code>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end gap-3">
-                              {client.risk_assessment_completed ? (
-                                <button 
-                                  onClick={() => setViewingProfileFor(client)}
-                                  className={`p-2 rounded-lg transition-colors group relative ${
-                                    hasDrift ? 'text-red-600 hover:bg-red-100' : 'text-blue-600 hover:bg-blue-50'
-                                  }`}
-                                  title="View Profile"
-                                >
-                                  <User className="w-5 h-5" />
-                                  <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">View Profile</span>
-                                </button>
+              <>
+                {/* Desktop Table View */}
+                <div className="hidden lg:block overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="px-6 py-4 font-medium">Name</th>
+                        <th className="px-6 py-4 font-medium">Email</th>
+                        <th className="px-6 py-4 font-medium">Income</th>
+                        <th className="px-6 py-4 font-medium">Net Worth</th>
+                        <th className="px-6 py-4 font-medium">Status</th>
+                        <th className="px-6 py-4 font-medium">Investor ID</th>
+                        <th className="px-6 py-4 font-medium text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {clients.map((client) => {
+                        const hasDrift = driftEvents.some(e => {
+                          const portfolioData = (e as any).portfolio;
+                          const portfolio = Array.isArray(portfolioData) ? portfolioData[0] : portfolioData;
+                          const cid = portfolio?.client_id;
+                          return cid === client.id;
+                        });
+                        return (
+                          <tr 
+                            key={client.id} 
+                            className={`transition-all duration-500 ${
+                              hasDrift 
+                                ? 'animate-blink-red' 
+                                : 'hover:bg-slate-50/50'
+                            }`}
+                          >
+                            <td className="px-6 py-4 font-medium text-slate-900">
+                              <div className="flex items-center gap-2">
+                                {hasDrift && (
+                                  <div className="relative flex h-3 w-3">
+                                    <span className="animate-pulse-ring absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                  </div>
+                                )}
+                                {client.first_name} {client.last_name}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-slate-500">{client.email}</td>
+                            <td className="px-6 py-4 text-slate-500">{client.annual_income ? `$${client.annual_income.toLocaleString()}` : '-'}</td>
+                            <td className="px-6 py-4 text-slate-500">{client.net_worth ? `$${client.net_worth.toLocaleString()}` : '-'}</td>
+                            <td className="px-6 py-4">
+                              {client.health_status === 'drift_detected' || hasDrift ? (
+                                <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-600 text-white shadow-sm shadow-red-200">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  Drift Detected
+                                </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                  Pending
+                                <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                                  Healthy
                                 </span>
                               )}
-                              <button 
-                                onClick={() => setDeletingClient(client)}
-                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete Investor"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
+                            </td>
+                            <td className="px-6 py-4">
+                              <code className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 font-mono">{client.id}</code>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-3">
+                                {client.risk_assessment_completed ? (
+                                  <button 
+                                    onClick={() => setViewingProfileFor(client)}
+                                    className={`p-2 rounded-lg transition-colors group relative ${
+                                      hasDrift ? 'text-red-600 hover:bg-red-100' : 'text-blue-600 hover:bg-blue-50'
+                                    }`}
+                                    title="View Profile"
+                                  >
+                                    <User className="w-5 h-5" />
+                                    <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">View Profile</span>
+                                  </button>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                    Pending
+                                  </span>
+                                )}
+                                <button 
+                                  onClick={() => setDeletingClient(client)}
+                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Delete Investor"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Card View */}
+                <div className="lg:hidden divide-y divide-slate-100">
+                  {clients.map((client) => {
+                    const hasDrift = driftEvents.some(e => {
+                      const portfolioData = (e as any).portfolio;
+                      const portfolio = Array.isArray(portfolioData) ? portfolioData[0] : portfolioData;
+                      const cid = portfolio?.client_id;
+                      return cid === client.id;
+                    });
+                    return (
+                      <div 
+                        key={client.id} 
+                        className={`p-4 transition-all duration-500 ${
+                          hasDrift ? 'bg-red-50/30' : 'hover:bg-slate-50/50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            {hasDrift && (
+                              <div className="relative flex h-3 w-3">
+                                <span className="animate-pulse-ring absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                              </div>
+                            )}
+                            <h3 className="font-bold text-slate-900">{client.first_name} {client.last_name}</h3>
+                          </div>
+                          {client.health_status === 'drift_detected' || hasDrift ? (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider bg-red-600 text-white shadow-sm">
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              Drift
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100">
+                              Healthy
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-y-3 mb-4">
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Email</p>
+                            <p className="text-xs text-slate-600 truncate pr-2">{client.email}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Income</p>
+                            <p className="text-xs text-slate-600">{client.annual_income ? `$${client.annual_income.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Net Worth</p>
+                            <p className="text-xs text-slate-600">{client.net_worth ? `$${client.net_worth.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Investor ID</p>
+                            <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-mono">{client.id.slice(0, 8)}...</code>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-50">
+                          {client.risk_assessment_completed ? (
+                            <button 
+                              onClick={() => setViewingProfileFor(client)}
+                              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${
+                                hasDrift ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
+                              }`}
+                            >
+                              <User className="w-4 h-4" />
+                              View Profile
+                            </button>
+                          ) : (
+                            <div className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-600 border border-amber-100">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                              Assessment Pending
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          )}
+                          <button 
+                            onClick={() => setDeletingClient(client)}
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         </motion.div>

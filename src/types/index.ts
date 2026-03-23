@@ -9,14 +9,6 @@ export type AIModel =
   | 'groq/compound'
   | 'groq/compound-mini';
 
-export interface Advisor {
-  id: string;
-  full_name: string;
-  email: string;
-  license_number: string | null;
-  created_at?: string;
-}
-
 export interface Client {
   id: string;
   advisor_id: string;
@@ -29,6 +21,7 @@ export interface Client {
   liquidity_needs: number | null;
   tax_bracket: number | null;
   investable_assets: number | null;
+  dependents: number | null;
   risk_assessment_completed?: boolean;
   risk_assessment_finalized?: boolean;
   final_risk_category?: string;
@@ -78,8 +71,6 @@ export interface RiskAssessment {
   risk_category: string;
   finalized_by_advisor: boolean;
   finalized_at: string | null;
-  ai_behavior_summary: string;
-  ai_confidence_score: number;
   advisor_override_category?: string;
   advisor_override_reason?: string;
   created_at: string;
@@ -87,14 +78,6 @@ export interface RiskAssessment {
   risk_probability_analysis?: any;
   dual_scoring_analysis?: any;
   consistency_analysis?: any;
-}
-
-export interface RiskAssessmentResponse {
-  id: string;
-  risk_assessment_id: string;
-  question_id: string;
-  selected_option_id: string;
-  score_given: number;
 }
 
 export interface IPSDocument {

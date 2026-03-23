@@ -1,25 +1,47 @@
 import { supabase } from '../db/supabase.ts';
 import { aiService } from './aiService.ts';
 
+/**
+ * Service for managing portfolio operations, including creation from IPS.
+ */
 export const portfolioService = {
+  /**
+   * Creates a new portfolio based on an IPS document and client data.
+   * 
+   * @param ipsId The ID of the IPS document to use.
+   * @param clientId The ID of the client.
+   * @param totalInvestment The total amount to invest.
+   * @param model Optional AI model override for portfolio drafting.
+   * @returns The created portfolio object.
+   * @throws Error if IPS is not found or investment amount is invalid.
+   */
   async createPortfolioFromIPS(ipsId: string, clientId: string, totalInvestment?: number, model?: any) {
-    // 1. Fetch IPS and Allocations
+    // 1. Fetch IPS, Allocations, Client, and Responses
     const { data: ips, error: ipsError } = await supabase
       .from('ips_documents')
       .select(`
         *,
-        target_allocations (*)
+        target_allocations (*),
+        client:clients (*),
+        assessment:risk_assessments (
+          *,
+          responses:risk_assessment_responses (
+            *,
+            risk_questions (*),
+            risk_answer_options (*)
+          )
+        )
       `)
       .eq('id', ipsId)
       .single();
     
     if (ipsError) throw ipsError;
 
+    const client = ips.client;
+    const responses = ips.assessment?.responses || [];
+
     // 2. Validate Investment Amount
-    
-    
     if (totalInvestment === undefined || totalInvestment === null || totalInvestment <= 0) {
-      
       throw new Error('Total investment amount is required and must be greater than zero. Please update the client profile with investable assets or net worth.');
     }
     
@@ -46,7 +68,14 @@ export const portfolioService = {
       if (secError) throw secError;
 
       // 4. Draft Portfolio using AI
-      const aiDraft = await aiService.draftPortfolioFromIPS(ips, totalInvestment, allSecurities || [], model);
+      const aiDraft = await aiService.draftPortfolioFromIPS(
+        ips, 
+        totalInvestment, 
+        allSecurities || [], 
+        client, 
+        responses, 
+        model
+      );
       
       // Calculate actual sum of percentages
       const actualTotalPercent = aiDraft.holdings.reduce((sum: number, h: any) => sum + h.allocated_percent, 0);

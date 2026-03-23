@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { supabase } from '../../db/supabase.ts';
 import { portfolioService } from '../../services/portfolioService.ts';
-import { ALLOCATION_MODELS, RiskCategory } from '../../constants/allocationModels.ts';
 
 const router = Router();
 

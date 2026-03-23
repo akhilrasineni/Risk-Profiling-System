@@ -9,6 +9,15 @@ import LoginView from './components/LoginView';
 import AdvisorDashboard from './components/AdvisorDashboard';
 import ClientDashboard from './components/ClientDashboard';
 
+/**
+ * The main application component.
+ * It handles the top-level routing based on the user's authentication session.
+ * If no user is logged in, it displays the LoginView.
+ * If an advisor is logged in, it displays the AdvisorDashboard.
+ * If a client is logged in, it displays the ClientDashboard.
+ * 
+ * @returns A JSX element representing the application's current view.
+ */
 export default function App() {
   const [user, setUser] = useState<UserSession | null>(null);
 

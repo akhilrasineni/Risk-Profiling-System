@@ -8,11 +8,25 @@ import PortfolioEditor from './PortfolioEditor';
 import Tooltip from './Tooltip';
 import DriftAlert, { DriftDetailsModal } from './DriftAlert';
 
+/**
+ * Props for the ClientDashboard component.
+ */
 interface ClientDashboardProps {
+  /** The session object for the logged-in client. */
   clientSession: UserSession;
+  /** Callback function to handle client logout. */
   onLogout: () => void;
 }
 
+/**
+ * ClientDashboard component provides a comprehensive view for individual clients.
+ * It displays their profile information, Investment Policy Statement (IPS), portfolio holdings,
+ * and risk assessment status. It also allows clients to take the risk questionnaire
+ * and view drift alerts.
+ * 
+ * @param props - The component props.
+ * @returns A JSX element representing the client dashboard.
+ */
 export default function ClientDashboard({ clientSession, onLogout }: ClientDashboardProps) {
   const [clientData, setClientData] = useState<Client>(clientSession.rawData);
   const [view, setView] = useState<'profile' | 'assessment' | 'ips' | 'portfolio'>('profile');
@@ -180,15 +194,15 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
 
       {/* Header */}
       <header className="bg-white/70 backdrop-blur-xl border-b border-slate-200 sticky top-0 z-20 print:hidden">
-        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
-              <UserCircle className="w-5 h-5" />
+        <div className="max-w-6xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="w-8 h-8 md:w-9 md:h-9 bg-blue-600 text-white rounded-lg md:rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
+              <UserCircle className="w-4 h-4 md:w-5 md:h-5" />
             </div>
-            <h1 className="font-display font-bold text-xl text-slate-900 tracking-tight">Investor Portal</h1>
+            <h1 className="font-display font-bold text-lg md:text-xl text-slate-900 tracking-tight">Investor Portal</h1>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-500 font-medium">Welcome, {clientSession.name}</span>
+          <div className="flex items-center gap-2 md:gap-4">
+            <span className="hidden sm:inline text-sm text-slate-500 font-medium">Welcome, {clientSession.name}</span>
             
             {isDriftMinimized && !isDriftClosed && (
               <DriftAlert 
@@ -207,20 +221,20 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto py-12 px-4 relative z-10">
+      <div className="max-w-5xl mx-auto py-6 md:py-12 px-4 md:px-6 relative z-10">
         {view === 'profile' ? (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
-            className="space-y-10"
+            className="space-y-6 md:space-y-10"
           >
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-6">
               <div>
-                <h2 className="text-4xl font-display font-bold tracking-tight text-slate-900">Investor Dossier</h2>
-                <p className="text-slate-500 mt-2 font-medium">Comprehensive overview of your financial profile and investment status.</p>
+                <h2 className="text-3xl md:text-4xl font-display font-bold tracking-tight text-slate-900">Investor Dossier</h2>
+                <p className="text-slate-500 mt-1 md:mt-2 font-medium text-sm md:text-base">Comprehensive overview of your financial profile and investment status.</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 {!isDriftMinimized && !isDriftClosed && (
                   <DriftAlert 
                     events={driftEvents} 
@@ -233,7 +247,7 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
                 <button 
                   onClick={() => setView('assessment')}
                   disabled={clientData.risk_assessment_completed}
-                  className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold transition-all shadow-sm ${
+                  className={`flex items-center justify-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold transition-all shadow-sm ${
                     clientData.risk_assessment_completed 
                       ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
                       : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-100 active:scale-95'
@@ -249,46 +263,46 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
             <div className="flex flex-col gap-6">
               
               {/* Financial Metrics Bento - NOW AT THE TOP */}
-              <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-8">
-                <div className="flex items-center gap-3 mb-8">
+              <div className="bg-white border border-slate-200 rounded-[1.5rem] md:rounded-[2rem] shadow-sm p-6 md:p-8">
+                <div className="flex items-center gap-3 mb-6 md:mb-8">
                   <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-600">
                     <TrendingUp className="w-4 h-4" />
                   </div>
-                  <h3 className="text-xl font-display font-bold text-slate-900 tracking-tight">Financial Profile</h3>
+                  <h3 className="text-lg md:text-xl font-display font-bold text-slate-900 tracking-tight">Financial Profile</h3>
                 </div>
                 
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 md:gap-8">
                   <div className="group">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 group-hover:text-blue-500 transition-colors">Annual Income</p>
-                    <p className="text-2xl font-display font-bold text-slate-900 tracking-tight">
+                    <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-1 md:mb-2 group-hover:text-blue-500 transition-colors">Annual Income</p>
+                    <p className="text-xl md:text-2xl font-display font-bold text-slate-900 tracking-tight">
                       {clientData.annual_income ? `$${clientData.annual_income.toLocaleString()}` : '—'}
                     </p>
                   </div>
                   
                   <div className="group">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 group-hover:text-blue-500 transition-colors">Net Worth</p>
-                    <p className="text-2xl font-display font-bold text-slate-900 tracking-tight">
+                    <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-1 md:mb-2 group-hover:text-blue-500 transition-colors">Net Worth</p>
+                    <p className="text-xl md:text-2xl font-display font-bold text-slate-900 tracking-tight">
                       {clientData.net_worth ? `$${clientData.net_worth.toLocaleString()}` : '—'}
                     </p>
                   </div>
                   
                   <div className="group">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 group-hover:text-blue-500 transition-colors">Liquidity Needs</p>
-                    <p className="text-2xl font-display font-bold text-slate-900 tracking-tight">
+                    <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-1 md:mb-2 group-hover:text-blue-500 transition-colors">Liquidity Needs</p>
+                    <p className="text-xl md:text-2xl font-display font-bold text-slate-900 tracking-tight">
                       {clientData.liquidity_needs ? `$${clientData.liquidity_needs.toLocaleString()}` : '—'}
                     </p>
                   </div>
                   
                   <div className="group">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 group-hover:text-blue-500 transition-colors">Tax Bracket</p>
-                    <p className="text-2xl font-display font-bold text-slate-900 tracking-tight">
+                    <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-1 md:mb-2 group-hover:text-blue-500 transition-colors">Tax Bracket</p>
+                    <p className="text-xl md:text-2xl font-display font-bold text-slate-900 tracking-tight">
                       {clientData.tax_bracket ? `${clientData.tax_bracket}%` : '—'}
                     </p>
                   </div>
 
                   <div className="group">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 group-hover:text-blue-500 transition-colors">Profile Health Status</p>
-                    <p className={`text-2xl font-display font-bold tracking-tight ${healthStatus === 'drift_detected' ? 'text-red-500' : 'text-emerald-500'}`}>
+                    <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-1 md:mb-2 group-hover:text-blue-500 transition-colors">Health Status</p>
+                    <p className={`text-lg md:text-xl font-display font-bold tracking-tight ${healthStatus === 'drift_detected' ? 'text-red-500' : 'text-emerald-500'}`}>
                       {healthStatus === 'drift_detected' ? 'Drift Detected' : healthStatus === 'healthy' ? 'Healthy' : 'Loading...'}
                     </p>
                   </div>
@@ -304,8 +318,21 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
                     <div className="relative z-10 h-full flex flex-col justify-between">
                       <div>
                         <div className="flex items-center gap-3 mb-6">
-                          <div className="px-2.5 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded-full text-[9px] font-bold uppercase tracking-widest text-blue-300">
-                            Risk Classification
+                          <div className="group relative">
+                            <div className="px-2.5 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded-full text-[9px] font-bold uppercase tracking-widest text-blue-300 flex items-center gap-1.5 cursor-help">
+                              Risk Classification
+                              <Info className="w-3 h-3 text-blue-400" />
+                            </div>
+                            {/* Tooltip */}
+                            <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-slate-800 text-white text-[10px] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none text-left normal-case tracking-normal font-normal">
+                              <p className="font-bold mb-1 text-slate-200">Risk Profile Analysis:</p>
+                              <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                                <li><span className="font-semibold text-white">Willingness:</span> Behavioral responses to market volatility and loss scenarios</li>
+                                <li><span className="font-semibold text-white">Ability:</span> Time horizon, income stability, and liquidity requirements</li>
+                                <li><span className="font-semibold text-white">Financial Context:</span> Age, Net Worth, and Dependents</li>
+                              </ul>
+                              <div className="absolute -bottom-1 left-4 w-2 h-2 bg-slate-800 rotate-45"></div>
+                            </div>
                           </div>
                           {ips.risk_assessments.finalized_by_advisor && (
                             <div className="px-2.5 py-0.5 bg-emerald-500/20 border border-emerald-500/30 rounded-full text-[9px] font-bold uppercase tracking-widest text-emerald-300 flex items-center gap-1.5">
@@ -319,30 +346,11 @@ export default function ClientDashboard({ clientSession, onLogout }: ClientDashb
                           {ips.risk_assessments.advisor_override_category || ips.risk_assessments.risk_category}
                         </h3>
                         <p className="text-slate-400 max-w-md text-sm leading-relaxed font-medium italic opacity-80">
-                          "{ips.risk_assessments.ai_behavior_summary.split('[')[0].trim()}"
+                          Your risk profile is determined by analyzing your financial goals, time horizon, and behavioral responses to risk scenarios.
                         </p>
                       </div>
                       
                       <div className="mt-8 flex items-center gap-6">
-                        <div>
-                          <Tooltip alignment="left" content={
-                            <div className="text-left space-y-2">
-                              <p className="font-bold text-slate-200 border-b border-slate-700 pb-1 mb-1">Confidence Score Calculation</p>
-                              <ul className="list-disc pl-4 space-y-1 text-slate-300">
-                                <li><span className="text-white font-semibold">Consistency:</span> 98% match across related questions</li>
-                                <li><span className="text-white font-semibold">Financial Data:</span> Income, Net Worth & Liquidity aligned with risk capacity</li>
-                                <li><span className="text-white font-semibold">Data Points:</span> 15 behavioral inputs analyzed</li>
-                                <li><span className="text-white font-semibold">Model:</span> Gemini 1.5 Pro reasoning verification</li>
-                              </ul>
-                            </div>
-                          }>
-                            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 flex items-center gap-1 cursor-help">
-                              AI Confidence <Info className="w-3 h-3" />
-                            </p>
-                          </Tooltip>
-                          <p className="text-xl font-display font-bold text-blue-400">{ips.risk_assessments.ai_confidence_score}%</p>
-                        </div>
-                        <div className="h-8 w-px bg-slate-800"></div>
                         <div>
                           <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Status</p>
                           <p className="text-xl font-display font-bold text-white">Active Profile</p>

@@ -98,3 +98,28 @@ h1, h2, h3, h4 {
 .animate-pulse-ring {
   animation: pulse-ring 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Custom IPS Prose Styling */
+.prose-ips {
+  @apply text-slate-700 leading-relaxed;
+}
+
+.prose-ips h3 {
+  @apply font-display text-slate-900 font-bold text-base mt-8 mb-4 border-l-4 border-blue-600 pl-4 uppercase tracking-wider;
+}
+
+.prose-ips p {
+  @apply mb-4 text-sm;
+}
+
+.prose-ips ul {
+  @apply list-disc pl-5 mb-6 space-y-2 text-sm;
+}
+
+.prose-ips strong {
+  @apply text-slate-900 font-semibold;
+}
+
+.prose-ips blockquote {
+  @apply border-l-4 border-slate-200 pl-4 italic text-slate-500 my-6;
+}
