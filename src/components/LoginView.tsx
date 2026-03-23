@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserSession } from '../types';
+import LogicFlow from './LogicFlow';
 
 /**
  * LoginView component provides a simple login interface for advisors and clients.
@@ -19,6 +20,7 @@ export default function LoginView({ onLogin }: { onLogin: (user: UserSession) =>
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTechStack, setShowTechStack] = useState(false);
+  const [showLogicFlow, setShowLogicFlow] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,13 +70,22 @@ export default function LoginView({ onLogin }: { onLogin: (user: UserSession) =>
         <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-emerald-400/20 rounded-full blur-[80px] animate-float [animation-delay:4s]"></div>
       </div>
 
-      <button
-        onClick={() => setShowTechStack(true)}
-        className="absolute top-8 right-8 p-2.5 bg-white text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full shadow-sm border border-slate-200 transition-all hover:scale-110 active:scale-95 z-20"
-        title="View Tech Stack"
-      >
-        <Info className="w-5 h-5" />
-      </button>
+      <div className="absolute top-8 right-8 flex gap-3 z-20">
+        <button
+          onClick={() => setShowLogicFlow(true)}
+          className="p-2.5 bg-white text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-full shadow-sm border border-slate-200 transition-all hover:scale-110 active:scale-95"
+          title="View Logic Flow"
+        >
+          <BrainCircuit className="w-5 h-5" />
+        </button>
+        <button
+          onClick={() => setShowTechStack(true)}
+          className="p-2.5 bg-white text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full shadow-sm border border-slate-200 transition-all hover:scale-110 active:scale-95"
+          title="View Tech Stack"
+        >
+          <Info className="w-5 h-5" />
+        </button>
+      </div>
 
       <div className="max-w-md w-full relative z-10">
         <div className="text-center mb-6">
@@ -230,6 +241,10 @@ export default function LoginView({ onLogin }: { onLogin: (user: UserSession) =>
             </div>
           </motion.div>
         </motion.div>
+      )}
+
+      {showLogicFlow && (
+        <LogicFlow onClose={() => setShowLogicFlow(false)} />
       )}
       </AnimatePresence>
     </div>
