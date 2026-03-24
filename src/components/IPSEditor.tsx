@@ -162,67 +162,161 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
     }
     
     if (client && formData.liquidity_needs && client.liquidity_needs && Number(formData.liquidity_needs) !== client.liquidity_needs) {
-        newInconsistencies.push(`Liquidity needs ($${formData.liquidity_needs}) does not match client profile ($${client.liquidity_needs}).`);
+        newInconsistencies.push(`Liquidity needs ($${formData.liquidity_needs.toLocaleString()}) does not match client profile ($${client.liquidity_needs.toLocaleString()}).`);
     }
 
     if (client && formData.tax_considerations && client.tax_bracket && Number(formData.tax_considerations) !== client.tax_bracket) {
         newInconsistencies.push(`Tax bracket (${formData.tax_considerations}%) does not match client profile (${client.tax_bracket}%).`);
     }
 
-    // Text-parsing consistency check for time horizon
-    const rangeRegex = /(\d+)\s*[-–—]\s*(\d+)\s*year(s)?/i;
-    const singleYearRegex = /(\d+)\s*year(s)?/i;
-    const driftRegex = /(\d+)\s*%/;
+    // Text-parsing consistency check
+    const rangeRegex = /(\d+)\s*[-–—]\s*(\d+)\s*year(s)?/gi;
+    const singleYearRegex = /(\d+)(?:\s*|-)\s*year(s)?/gi;
+    // Drift: matches "5% band", "drift of 5%", "+/- 5%", "5% drift", "5 percent"
+    const driftRegex = /(?:(?:drift|tolerance|band|rebalance|threshold)\s*(?:of\s*)?(\d+)\s*(?:%|percent|percentage)|(\d+)\s*(?:%|percent|percentage)\s*(?:drift|tolerance|band|rebalance|threshold)|(?:\+\/-|plus\/minus)\s*(\d+)\s*(?:%|percent|percentage))/gi;
+    // Liquidity: matches "liquidity of $500k", "$500k liquidity", "$500,000", "500,000 liquidity"
+    const liquidityRegex = /(?:(?:liquidity|needs|withdraw|cash|withdrawal)\s*(?:of\s*)?\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)|(?:\$\s*)?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:\$\s*)?(?:liquidity|needs|withdraw|cash|withdrawal)|\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?))/gi;
+    const riskCategories = ['conservative', 'moderate', 'aggressive', 'moderately aggressive', 'very aggressive', 'moderately conservative', 'neutral'];
+    const riskKeywords = ['profile', 'category', 'orientation', 'posture', 'stance', 'classification', 'risk-return', 'risk'];
+    const riskProfileRegex = new RegExp(`(?:${riskKeywords.join('|')})\\s*(?:is|of|:)?\\s*(${riskCategories.join('|')})`, 'gi');
+    const standaloneRiskRegex = new RegExp(`\\b(${riskCategories.join('|')})\\b(?:\\s+(?:${riskKeywords.join('|')}))?`, 'gi');
+    
+    // Rebalancing Frequency: matches "quarterly", "annually", "semi-annually"
+    const freqRegex = /\b(quarterly|annually|semi-annually|monthly|yearly)\b/gi;
+    
+    // Total Allocation: matches "total allocation of 100%", "sums to 100%"
+    const totalAllocRegex = /(?:total|sum|overall)\s*(?:allocation|percent|percentage)?\s*(?:of|is|to)?\s*(\d+)\s*(?:%|percent|percentage)/gi;
 
-    const foundYears: { [key: string]: number } = {};
+    const foundYears: { [key: string]: number[] } = {};
+    const foundLiquidity: { [key: string]: number[] } = {};
+    const foundDrift: { [key: string]: number[] } = {};
+    const foundRisk: { [key: string]: string[] } = {};
+    const foundFreq: { [key: string]: string[] } = {};
+    const foundTotalAlloc: { [key: string]: number[] } = {};
 
     const checkDescription = (desc: string, fieldName: string) => {
-        // Check time horizon
-        const rangeMatch = desc.match(rangeRegex);
-        if (rangeMatch) {
-            const min = parseInt(rangeMatch[1], 10);
-            const max = parseInt(rangeMatch[2], 10);
+        foundYears[fieldName] = [];
+        foundLiquidity[fieldName] = [];
+        foundDrift[fieldName] = [];
+        foundRisk[fieldName] = [];
+        foundFreq[fieldName] = [];
+        foundTotalAlloc[fieldName] = [];
+
+        // Check time horizon ranges
+        const rangeMatches = [...desc.matchAll(rangeRegex)];
+        const rangeYears = new Set<number>();
+        rangeMatches.forEach(match => {
+            const min = parseInt(match[1], 10);
+            const max = parseInt(match[2], 10);
+            rangeYears.add(min);
+            rangeYears.add(max);
             if (formData.time_horizon_years < min || formData.time_horizon_years > max) {
                 newInconsistencies.push(`Time horizon in ${fieldName} (${min}-${max} years) is inconsistent with form data (${formData.time_horizon_years} years).`);
             }
-            // Store for cross-section comparison (using max as representative or just flagging if different)
-            foundYears[fieldName] = max; 
-        } else {
-            const singleMatch = desc.match(singleYearRegex);
-            if (singleMatch) {
-                const yearsInText = parseInt(singleMatch[1], 10);
-                if (yearsInText !== formData.time_horizon_years) {
-                    newInconsistencies.push(`Time horizon in ${fieldName} (${yearsInText} years) does not match form data (${formData.time_horizon_years} years).`);
-                }
-                foundYears[fieldName] = yearsInText;
-            }
-        }
+            foundYears[fieldName].push(max);
+        });
 
-        // Check drift tolerance in rebalancing strategy
-        if (fieldName === "rebalancing strategy") {
-            const driftMatch = desc.match(driftRegex);
-            if (driftMatch) {
-                const driftInText = parseInt(driftMatch[1], 10);
-                if (driftInText !== formData.rebalancing_band_percent) {
-                    newInconsistencies.push(`Drift tolerance in ${fieldName} (${driftInText}%) does not match form data (${formData.rebalancing_band_percent}%).`);
-                }
+        // Check single years
+        const singleMatches = [...desc.matchAll(singleYearRegex)];
+        singleMatches.forEach(match => {
+            const yearsInText = parseInt(match[1], 10);
+            // Skip if this year was already part of a range match
+            if (rangeYears.has(yearsInText)) return;
+            
+            if (yearsInText !== formData.time_horizon_years) {
+                newInconsistencies.push(`Time horizon in ${fieldName} (${yearsInText} years) does not match form data (${formData.time_horizon_years} years).`);
+            }
+            foundYears[fieldName].push(yearsInText);
+        });
+
+        // Check drift tolerance
+        const driftMatches = [...desc.matchAll(driftRegex)];
+        driftMatches.forEach(match => {
+            const driftInText = parseInt(match[1] || match[2] || match[3], 10);
+            if (driftInText !== formData.rebalancing_band_percent) {
+                newInconsistencies.push(`Drift tolerance in ${fieldName} (${driftInText}%) does not match form data (${formData.rebalancing_band_percent}%).`);
+            }
+            foundDrift[fieldName].push(driftInText);
+        });
+
+        // Check liquidity
+        const liqMatches = [...desc.matchAll(liquidityRegex)];
+        liqMatches.forEach(match => {
+            const liqStr = match[1] || match[2] || match[3];
+            const liqInText = parseFloat(liqStr.replace(/,/g, ''));
+            if (liqInText !== formData.liquidity_needs) {
+                newInconsistencies.push(`Liquidity needs in ${fieldName} ($${liqInText.toLocaleString()}) does not match form data ($${formData.liquidity_needs.toLocaleString()}).`);
+            }
+            foundLiquidity[fieldName].push(liqInText);
+        });
+
+        // Check risk category
+        const riskMatches = [...desc.matchAll(riskProfileRegex), ...desc.matchAll(standaloneRiskRegex)];
+        riskMatches.forEach(match => {
+            const riskInText = match[1].toLowerCase().replace(/\s+/g, ' ');
+            const currentRisk = formData.risk_category.toLowerCase().replace(/\s+/g, ' ');
+            if (riskInText !== currentRisk && riskInText !== 'neutral') {
+                newInconsistencies.push(`Risk category in ${fieldName} (${match[1]}) does not match form data (${formData.risk_category}).`);
+            }
+            foundRisk[fieldName].push(riskInText);
+        });
+
+        // Check rebalancing frequency
+        const freqMatches = [...desc.matchAll(freqRegex)];
+        freqMatches.forEach(match => {
+            const freqInText = match[1].toLowerCase();
+            const currentFreq = formData.rebalancing_frequency.toLowerCase();
+            if (freqInText !== currentFreq) {
+                newInconsistencies.push(`Rebalancing frequency in ${fieldName} (${match[1]}) does not match form data (${formData.rebalancing_frequency}).`);
+            }
+            foundFreq[fieldName].push(freqInText);
+        });
+
+        // Check total allocation
+        const totalMatches = [...desc.matchAll(totalAllocRegex)];
+        totalMatches.forEach(match => {
+            const totalInText = parseInt(match[1], 10);
+            if (totalInText !== 100) {
+                newInconsistencies.push(`Total allocation mentioned in ${fieldName} (${totalInText}%) is not 100%.`);
+            }
+            foundTotalAlloc[fieldName].push(totalInText);
+        });
+    };
+
+    const textFields = [
+        { val: formData.investment_objective, name: "investment objective" },
+        { val: formData.goals_description, name: "goals" },
+        { val: formData.constraints_description, name: "constraints" },
+        { val: formData.rebalancing_strategy_description, name: "rebalancing strategy" },
+        { val: formData.monitoring_review_description, name: "monitoring" }
+    ];
+
+    textFields.forEach(field => {
+        if (field.val) checkDescription(field.val, field.name);
+    });
+
+    // Cross-section comparison
+    const compare = (found: { [key: string]: any[] }, label: string) => {
+        const keys = Object.keys(found);
+        for (let i = 0; i < keys.length; i++) {
+            for (let j = i + 1; j < keys.length; j++) {
+                found[keys[i]].forEach(val1 => {
+                    found[keys[j]].forEach(val2 => {
+                        if (val1 !== val2) {
+                            newInconsistencies.push(`Mismatch in ${label}: ${keys[i]} mentions ${val1}, but ${keys[j]} mentions ${val2}.`);
+                        }
+                    });
+                });
             }
         }
     };
 
-    if (formData.constraints_description) checkDescription(formData.constraints_description, "constraints");
-    if (formData.goals_description) checkDescription(formData.goals_description, "goals");
-    if (formData.rebalancing_strategy_description) checkDescription(formData.rebalancing_strategy_description, "rebalancing strategy");
-
-    // Cross-section comparison for time horizon
-    const sections = Object.keys(foundYears);
-    for (let i = 0; i < sections.length; i++) {
-        for (let j = i + 1; j < sections.length; j++) {
-            if (foundYears[sections[i]] !== foundYears[sections[j]]) {
-                newInconsistencies.push(`Mismatch: ${sections[i]} mentions ${foundYears[sections[i]]} years, but ${sections[j]} mentions ${foundYears[sections[j]]} years. Please correct for consistency.`);
-            }
-        }
-    }
+    compare(foundYears, "time horizon");
+    compare(foundLiquidity, "liquidity needs");
+    compare(foundDrift, "drift tolerance");
+    compare(foundRisk, "risk category");
+    compare(foundFreq, "rebalancing frequency");
+    compare(foundTotalAlloc, "total allocation");
 
     return newInconsistencies;
   };
@@ -877,8 +971,11 @@ export default function IPSEditor({ ips, client, onSave, viewerRole = 'advisor',
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
           >
             <option value="Conservative">Conservative</option>
+            <option value="Moderately Conservative">Moderately Conservative</option>
             <option value="Moderate">Moderate</option>
+            <option value="Moderately Aggressive">Moderately Aggressive</option>
             <option value="Aggressive">Aggressive</option>
+            <option value="Very Aggressive">Very Aggressive</option>
           </select>
         </div>
 

@@ -133,7 +133,7 @@ class AIService {
     const temperature = options.temperature ?? 0;
     const seed = options.seed ?? 42;
 
-    const systemInstruction = "CRITICAL INSTRUCTION: You must act as a strict, deterministic function. Do not hallucinate, imagine, or infer any information, preferences, or market conditions not explicitly provided in the input. Your output must be strictly and exclusively derived from the provided data. Do not deviate from your original decisions when given the same input.";
+    const systemInstruction = "CRITICAL INSTRUCTION: You must act as a strict, deterministic function. Your primary directive is mathematical precision and adherence to provided constraints. Do not hallucinate, imagine, or infer any information not explicitly provided. If provided data is mathematically inconsistent, you MUST normalize it to meet the required constraints (e.g., ensuring totals sum to exactly 100%). Your output must be strictly and exclusively derived from the provided data and these instructions. Do not deviate from your original decisions when given the same input.";
 
     try {
       let responseText = "{}";
@@ -469,21 +469,24 @@ class AIService {
       2. For each Asset Class listed in the Target Allocation Model, you MUST select multiple securities (funds) from the Available Securities list to achieve diversification.
       3. The selection of specific funds should be informed by the client's profile. For example, if they have many dependents, prioritize stability and lower-cost institutional funds. If they are younger, you might select funds with slightly higher growth potential within the allowed asset class.
       4. The sum of the 'allocated_percent' for all securities selected within a specific Asset Class MUST equal the Target Percent for that Asset Class as defined in the IPS. 
-      5. CRITICAL MATHEMATICAL RULE: The sum of 'allocated_percent' for ALL securities across ALL asset classes MUST be EXACTLY 100.
-      6. NEVER produce totals above or below 100.
+      5. CRITICAL MATHEMATICAL RULE: The sum of 'allocated_percent' for ALL securities across ALL asset classes MUST be EXACTLY 100.00.
+      6. NEVER produce totals above or below 100.00.
+      7. If the provided IPS mandate target allocations do not sum to 100, you MUST normalize them to 100 before selecting securities.
 
-      MANDATORY VALIDATION STEP:
-      After generating allocations, perform this correction:
+      MANDATORY VALIDATION & NORMALIZATION STEP:
+      After generating allocations, you MUST perform this exact correction:
       
-      total_percent = Sum of all allocated_percent
+      current_total = Sum of all allocated_percent
       
-      If total_percent > 100 → reduce the largest allocation until total_percent = 100  
-      If total_percent < 100 → increase the allocation of the most stable Debt security until total_percent = 100
+      If current_total != 100:
+        1. Identify the security with the largest allocation.
+        2. Adjust its allocation by (100 - current_total) so that the new sum is EXACTLY 100.00.
+        3. Recalculate allocated_amount and units for that security.
 
       CALCULATION REQUIREMENTS:
       - allocated_amount = (allocated_percent / 100) * ${totalInvestment}
       - units = allocated_amount / security.current_price
-      - Ensure allocated_percent values are precise and sum exactly to 100.
+      - Ensure allocated_percent values are precise (up to 2 decimal places) and sum exactly to 100.00.
 
       Return ONLY a JSON object in the following structure:
       {
@@ -495,7 +498,11 @@ class AIService {
             "units": number
           }
         ],
-        "total_allocation_percent": number
+        "total_allocation_percent": number,
+        "math_verification": {
+          "sum_of_percents": number,
+          "is_exactly_100": boolean
+        }
       }
 
       FINAL VALIDATION (MANDATORY):
@@ -524,9 +531,17 @@ class AIService {
                 required: ["security_id", "allocated_percent", "allocated_amount", "units"]
               }
             },
-            total_allocation_percent: { type: Type.NUMBER }
+            total_allocation_percent: { type: Type.NUMBER },
+            math_verification: {
+              type: Type.OBJECT,
+              properties: {
+                sum_of_percents: { type: Type.NUMBER },
+                is_exactly_100: { type: Type.BOOLEAN }
+              },
+              required: ["sum_of_percents", "is_exactly_100"]
+            }
           },
-          required: ["holdings", "total_allocation_percent"]
+          required: ["holdings", "total_allocation_percent", "math_verification"]
         },
         temperature: 0,
         seed: 42
@@ -535,9 +550,47 @@ class AIService {
     );
     
     try {
-      return JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
-    } catch (e) {
+      const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
       
+      // Post-process normalization to ensure 100% total allocation
+      if (parsed.holdings && parsed.holdings.length > 0) {
+        const currentTotal = parsed.holdings.reduce((sum: number, h: any) => sum + h.allocated_percent, 0);
+        
+        if (Math.abs(currentTotal - 100) > 0.001) {
+          // Find the holding with the largest allocation to adjust
+          let maxIdx = 0;
+          for (let i = 1; i < parsed.holdings.length; i++) {
+            if (parsed.holdings[i].allocated_percent > parsed.holdings[maxIdx].allocated_percent) {
+              maxIdx = i;
+            }
+          }
+          
+          // Apply correction
+          const diff = 100 - currentTotal;
+          parsed.holdings[maxIdx].allocated_percent = Number((parsed.holdings[maxIdx].allocated_percent + diff).toFixed(2));
+          
+          // Recalculate amount and units for the adjusted holding
+          const h = parsed.holdings[maxIdx];
+          h.allocated_amount = Number(((h.allocated_percent / 100) * totalInvestment).toFixed(2));
+          
+          // We need the security price to recalculate units. 
+          // We can find it from availableSecurities.
+          const security = availableSecurities.find(s => s.id === h.security_id);
+          if (security && security.current_price > 0) {
+            h.units = Number((h.allocated_amount / security.current_price).toFixed(6));
+          }
+          
+          // Update metadata
+          parsed.total_allocation_percent = 100;
+          if (parsed.math_verification) {
+            parsed.math_verification.sum_of_percents = 100;
+            parsed.math_verification.is_exactly_100 = true;
+          }
+        }
+      }
+      
+      return parsed;
+    } catch (e) {
       throw new Error("Failed to draft portfolio using AI.");
     }
   }
@@ -646,12 +699,15 @@ class AIService {
       CRITICAL MATHEMATICAL RULE:
       - Equity + Debt + Alternatives MUST equal EXACTLY 100.
       - NEVER produce totals above or below 100.
+      - All target_percent values must be integers.
 
-      MANDATORY VALIDATION STEP:
-      After generating allocations, perform this correction:
+      MANDATORY VALIDATION & NORMALIZATION STEP:
+      After generating allocations, you MUST perform this exact correction:
       total = Equity + Debt + Alternatives
-      If total > 100 → reduce the largest allocation until total = 100  
-      If total < 100 → increase Debt until total = 100
+      If total != 100:
+        1. Identify the largest allocation.
+        2. Adjust it by (100 - total) so that the new sum is EXACTLY 100.
+        3. Ensure all values remain positive and logical.
 
       OUTPUT REQUIREMENTS:
       - Percentages must be integers.
@@ -660,19 +716,13 @@ class AIService {
       Return ONLY a JSON object in the following structure:
 
       {
-        "investment_objective": "### Executive Summary & Mandate\n[Provide a 250+ word institutional-grade summary. Define the 'Primary Investment Mandate'. Analyze 'Risk Tolerance' by separating 'Willingness' (behavioral) from 'Ability' (financial capacity). Provide a technical rationale for the ${riskCategory} classification based on an age of ${age} and ${dependents} dependents. Use professional sub-headers.]",
-        
-        "goals_description": "### Strategic Financial Objectives\n[Provide a 200+ word multi-section breakdown. Categorize into 'Primary Capital Objectives' (e.g., Retirement, Education for ${dependents} dependents) and 'Secondary Objectives' (e.g., Legacy, Philanthropy). Explain how the ${timeHorizon}-year horizon and current age of ${age} dictate the 'Required Rate of Return' and 'Risk Budget'.]",
-        
+        "investment_objective": "string",
+        "goals_description": "string",
         "rebalancing_frequency": "Quarterly" | "Semi-Annually" | "Annually",
         "rebalancing_band_percent": number,
-        
-        "rebalancing_strategy_description": "### Tactical Rebalancing Framework\n[Provide a 150+ word technical explanation. Detail the 'Drift Threshold' methodology (using the generated band percentage), the 'Buy-Low/Sell-High' discipline, and the specific rationale for the chosen rebalancing frequency. Explain how rebalancing manages 'Tail Risk' and maintains the 'Strategic Asset Allocation'.]",
-        
-        "monitoring_review_description": "### Governance & Oversight Framework\n[Provide a 120+ word formal framework. Define 'Performance Benchmarking' against relevant indices, 'Reporting Cycles', and 'Mandate Review' triggers (e.g., significant life events, changes in dependents, or health). Define the 'Fiduciary Review' process.]",
-        
-        "constraints_description": "### L-T-T-L-U Constraint Analysis\n[Provide a 200+ word structured analysis. 1) **Liquidity**: Address the $${liquidityNeeds} requirement and family-related buffers. 2) **Time Horizon**: Technical analysis of the ${timeHorizon}-year window. 3) **Tax**: Strategy for the ${taxConsiderations}% marginal bracket. 4) **Legal/Regulatory**: Standard fiduciary constraints. 5) **Unique**: Address ${concentratedPosition} and ${esgPreference} integration.]",
-        
+        "rebalancing_strategy_description": "string",
+        "monitoring_review_description": "string",
+        "constraints_description": "string",
         "target_allocations": [
           {
             "asset_class": "Equity",
@@ -692,7 +742,11 @@ class AIService {
             "lower_band": number,
             "upper_band": number
           }
-        ]
+        ],
+        "math_verification": {
+          "sum_of_targets": number,
+          "is_exactly_100": boolean
+        }
       }
 
       FINAL VALIDATION (MANDATORY):
@@ -706,12 +760,83 @@ class AIService {
       prompt,
       { 
         responseMimeType: "application/json", 
-        temperature: 0.2, // Slightly higher temperature for more descriptive text
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            investment_objective: { type: Type.STRING },
+            goals_description: { type: Type.STRING },
+            rebalancing_frequency: { type: Type.STRING, enum: ["Quarterly", "Semi-Annually", "Annually"] },
+            rebalancing_band_percent: { type: Type.NUMBER },
+            rebalancing_strategy_description: { type: Type.STRING },
+            monitoring_review_description: { type: Type.STRING },
+            constraints_description: { type: Type.STRING },
+            target_allocations: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  asset_class: { type: Type.STRING },
+                  target_percent: { type: Type.NUMBER },
+                  lower_band: { type: Type.NUMBER },
+                  upper_band: { type: Type.NUMBER }
+                },
+                required: ["asset_class", "target_percent", "lower_band", "upper_band"]
+              }
+            },
+            math_verification: {
+              type: Type.OBJECT,
+              properties: {
+                sum_of_targets: { type: Type.NUMBER },
+                is_exactly_100: { type: Type.BOOLEAN }
+              },
+              required: ["sum_of_targets", "is_exactly_100"]
+            }
+          },
+          required: [
+            "investment_objective", 
+            "goals_description", 
+            "rebalancing_frequency", 
+            "rebalancing_band_percent", 
+            "rebalancing_strategy_description", 
+            "monitoring_review_description", 
+            "constraints_description", 
+            "target_allocations",
+            "math_verification"
+          ]
+        },
+        temperature: 0, // Set to 0 for precision
         seed: 42 
       },
       modelOverride
     );
-    return JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
+    const parsed = JSON.parse(aiResponse.replace(/```json|```/g, '').trim());
+    
+    // Post-process normalization for IPS targets
+    if (parsed.target_allocations && parsed.target_allocations.length > 0) {
+      const currentTotal = parsed.target_allocations.reduce((sum: number, a: any) => sum + a.target_percent, 0);
+      
+      if (Math.abs(currentTotal - 100) > 0.001) {
+        // Find the asset class with the largest target to adjust
+        let maxIdx = 0;
+        for (let i = 1; i < parsed.target_allocations.length; i++) {
+          if (parsed.target_allocations[i].target_percent > parsed.target_allocations[maxIdx].target_percent) {
+            maxIdx = i;
+          }
+        }
+        
+        // Apply correction
+        const diff = 100 - currentTotal;
+        parsed.target_allocations[maxIdx].target_percent = Math.round(parsed.target_allocations[maxIdx].target_percent + diff);
+        
+        // Update metadata
+        if (parsed.math_verification) {
+          parsed.math_verification.sum_of_targets = 100;
+          parsed.math_verification.is_exactly_100 = true;
+        }
+      }
+    }
+    
+    return parsed;
   }
 
   /**

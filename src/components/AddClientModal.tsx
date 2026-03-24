@@ -26,8 +26,7 @@ export default function AddClientModal({ advisorId, onClose, onSuccess }: AddCli
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     first_name: '', last_name: '', email: '', dob: '',
-    annual_income: '', net_worth: '', liquidity_needs: '', tax_bracket: '',
-    dependents: ''
+    annual_income: '', net_worth: '', liquidity_needs: '', tax_bracket: ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,7 +44,6 @@ export default function AddClientModal({ advisorId, onClose, onSuccess }: AddCli
       net_worth: formData.net_worth ? Number(formData.net_worth) : null,
       liquidity_needs: formData.liquidity_needs ? Number(formData.liquidity_needs) : null,
       tax_bracket: formData.tax_bracket ? Number(formData.tax_bracket) : null,
-      dependents: formData.dependents ? Number(formData.dependents) : 0,
     };
 
     try {
@@ -116,10 +114,6 @@ export default function AddClientModal({ advisorId, onClose, onSuccess }: AddCli
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Tax Bracket (%)</label>
               <input type="number" value={formData.tax_bracket} onChange={e => setFormData({...formData, tax_bracket: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Dependents</label>
-              <input type="number" value={formData.dependents} onChange={e => setFormData({...formData, dependents: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="0" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Annual Income ($)</label>
