@@ -488,17 +488,25 @@ class AIService {
       - units = allocated_amount / security.current_price
       - Ensure allocated_percent values are precise (up to 2 decimal places) and sum exactly to 100.00.
 
+      PERFORMANCE PREDICTION (MANDATORY):
+      1. Predict the expected 1-year percentage return for this specific portfolio based on the asset allocation and selected securities.
+      2. Provide a confidence score (0-100) for this prediction.
+      3. Provide a detailed rationale (2-3 sentences) explaining why you believe the portfolio will achieve this return, considering the risk profile and market context of the selected securities.
+
       Return ONLY a JSON object in the following structure:
       {
         "holdings": [
           {
-            "security_id": "string",
+            "security_id": "EXACT UUID FROM THE LIST PROVIDED",
             "allocated_percent": number,
             "allocated_amount": number,
             "units": number
           }
         ],
         "total_allocation_percent": number,
+        "predicted_return_1y": number,
+        "confidence_score": number,
+        "prediction_rationale": "string",
         "math_verification": {
           "sum_of_percents": number,
           "is_exactly_100": boolean
@@ -532,6 +540,9 @@ class AIService {
               }
             },
             total_allocation_percent: { type: Type.NUMBER },
+            predicted_return_1y: { type: Type.NUMBER },
+            confidence_score: { type: Type.NUMBER },
+            prediction_rationale: { type: Type.STRING },
             math_verification: {
               type: Type.OBJECT,
               properties: {
@@ -541,7 +552,7 @@ class AIService {
               required: ["sum_of_percents", "is_exactly_100"]
             }
           },
-          required: ["holdings", "total_allocation_percent", "math_verification"]
+          required: ["holdings", "total_allocation_percent", "predicted_return_1y", "confidence_score", "prediction_rationale", "math_verification"]
         },
         temperature: 0,
         seed: 42

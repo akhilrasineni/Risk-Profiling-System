@@ -66,6 +66,9 @@ export const portfolioService = {
         .select('id, security_name, current_price, asset_class, asset_sub_class');
         
       if (secError) throw secError;
+      if (!allSecurities || allSecurities.length === 0) {
+        throw new Error("No securities found in the database. Please add securities before drafting a portfolio.");
+      }
 
       // 4. Draft Portfolio using AI
       const aiDraft = await aiService.draftPortfolioFromIPS(
@@ -77,12 +80,46 @@ export const portfolioService = {
         model
       );
       
+      // Update IPS with AI predictions
+      if (ips.id) {
+        const { data: currentIps } = await supabase
+          .from('ips_documents')
+          .select('constraints_json')
+          .eq('id', ips.id)
+          .single();
+          
+        const updatedConstraints = {
+          ...(currentIps?.constraints_json || {}),
+          portfolio_prediction: {
+            predicted_return_1y: aiDraft.predicted_return_1y,
+            confidence_score: aiDraft.confidence_score,
+            prediction_rationale: aiDraft.prediction_rationale
+          }
+        };
+
+        await supabase
+          .from('ips_documents')
+          .update({
+            constraints_json: updatedConstraints
+          })
+          .eq('id', ips.id);
+      }
+
       // Calculate actual sum of percentages
       const actualTotalPercent = aiDraft.holdings.reduce((sum: number, h: any) => sum + h.allocated_percent, 0);
       
       // Validate AI output
       if (Math.abs(actualTotalPercent - 100) > 0.1) {
         throw new Error(`AI generated portfolio with invalid total allocation: ${actualTotalPercent.toFixed(2)}%. Please try again.`);
+      }
+      
+      // 5. Validate Security IDs exist in our list
+      const validSecurityIds = new Set(allSecurities.map(s => s.id));
+      const invalidHoldings = aiDraft.holdings.filter((h: any) => !validSecurityIds.has(h.security_id));
+      
+      if (invalidHoldings.length > 0) {
+        const invalidNames = invalidHoldings.map((h: any) => h.security_id).join(', ');
+        throw new Error(`AI suggested securities that are not in our database: ${invalidNames}. Please try again.`);
       }
       
       const holdings = aiDraft.holdings.map((h: any) => ({

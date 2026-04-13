@@ -372,6 +372,61 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole, client 
         </span>
       </div>
 
+      {/* AI Performance Prediction Section */}
+      {((portfolio.ips?.constraints_json?.portfolio_prediction?.predicted_return_1y !== undefined) || 
+        (portfolio.ips?.constraints_json?.portfolio_prediction?.confidence_score !== undefined)) && (
+        <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-xl p-4 sm:p-6 mt-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="p-1.5 bg-violet-100 text-violet-600 rounded-lg">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <h4 className="font-bold text-slate-900 text-sm sm:text-base">AI Performance Prediction (1-Year)</h4>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div className="bg-white/60 backdrop-blur-sm p-3 rounded-lg border border-white/40">
+              <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Expected Return</p>
+              <p className="text-xl sm:text-2xl font-mono font-bold text-violet-700">
+                {portfolio.ips.constraints_json.portfolio_prediction.predicted_return_1y > 0 ? '+' : ''}
+                {portfolio.ips.constraints_json.portfolio_prediction.predicted_return_1y?.toFixed(2)}%
+              </p>
+            </div>
+            <div className="bg-white/60 backdrop-blur-sm p-3 rounded-lg border border-white/40">
+              <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Confidence Score</p>
+              <div className="flex items-end gap-2">
+                <p className="text-xl sm:text-2xl font-mono font-bold text-indigo-700">
+                  {portfolio.ips.constraints_json.portfolio_prediction.confidence_score}%
+                </p>
+                <div className="flex-1 h-2 bg-slate-200 rounded-full mb-2 overflow-hidden">
+                  <div 
+                    className="h-full bg-indigo-500 rounded-full" 
+                    style={{ width: `${portfolio.ips.constraints_json.portfolio_prediction.confidence_score}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {portfolio.ips.constraints_json.portfolio_prediction.prediction_rationale && (
+            <div className="bg-white/40 backdrop-blur-sm p-3 rounded-lg border border-white/20">
+              <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Prediction Rationale</p>
+              <p className="text-xs sm:text-sm text-slate-700 leading-relaxed italic">
+                "{portfolio.ips.constraints_json.portfolio_prediction.prediction_rationale}"
+              </p>
+            </div>
+          )}
+
+          <div className="mt-4 pt-4 border-t border-violet-100/50">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                <span className="font-bold text-slate-700 uppercase">Disclaimer:</span> Fund investments are subject to market risks, read all scheme related documents carefully. The NAVs of the schemes may go up or down depending upon the factors and forces affecting the securities market including the fluctuations in the interest rates. The past performance of the mutual funds is not necessarily indicative of future performance of the schemes. The Mutual Fund is not guaranteeing or assuring any dividend under any of the schemes and the same is subject to the availability and adequacy of distributable surplus. Investors are requested to review the prospectus carefully and obtain expert professional advice with regard to specific legal, tax and financial implications of the investment/participation in the scheme.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isAdvisor && (
         <button
           onClick={handleAddHolding}

@@ -411,6 +411,10 @@ router.post("/:id/build-portfolio", async (req, res) => {
         holdings:portfolio_holdings (
           *,
           security:securities (*)
+        ),
+        ips:ips_documents (
+          *,
+          target_allocations (*)
         )
       `)
       .eq('id', newPortfolio.id)
