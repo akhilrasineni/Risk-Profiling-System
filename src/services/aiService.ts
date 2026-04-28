@@ -489,9 +489,10 @@ class AIService {
       - Ensure allocated_percent values are precise (up to 2 decimal places) and sum exactly to 100.00.
 
       PERFORMANCE PREDICTION (MANDATORY):
-      1. Predict the expected 1-year percentage return for this specific portfolio based on the asset allocation and selected securities.
-      2. Provide a confidence score (0-100) for this prediction.
-      3. Provide a detailed rationale (2-3 sentences) explaining why you believe the portfolio will achieve this return, considering the risk profile and market context of the selected securities.
+      1. Predict the expected 1-year percentage return range for this specific portfolio based on the asset allocation and selected securities.
+      2. Provide a 'predicted_return_low' and 'predicted_return_high' to represent a realistic range.
+      3. Provide a confidence score (0-100) for this prediction.
+      4. Provide a detailed rationale (2-3 sentences) explaining why you believe the portfolio will achieve this return, considering the risk profile and market context of the selected securities.
 
       Return ONLY a JSON object in the following structure:
       {
@@ -504,7 +505,8 @@ class AIService {
           }
         ],
         "total_allocation_percent": number,
-        "predicted_return_1y": number,
+        "predicted_return_low": number,
+        "predicted_return_high": number,
         "confidence_score": number,
         "prediction_rationale": "string",
         "math_verification": {
@@ -540,7 +542,8 @@ class AIService {
               }
             },
             total_allocation_percent: { type: Type.NUMBER },
-            predicted_return_1y: { type: Type.NUMBER },
+            predicted_return_low: { type: Type.NUMBER },
+            predicted_return_high: { type: Type.NUMBER },
             confidence_score: { type: Type.NUMBER },
             prediction_rationale: { type: Type.STRING },
             math_verification: {
@@ -552,7 +555,7 @@ class AIService {
               required: ["sum_of_percents", "is_exactly_100"]
             }
           },
-          required: ["holdings", "total_allocation_percent", "predicted_return_1y", "confidence_score", "prediction_rationale", "math_verification"]
+          required: ["holdings", "total_allocation_percent", "predicted_return_low", "predicted_return_high", "confidence_score", "prediction_rationale", "math_verification"]
         },
         temperature: 0,
         seed: 42

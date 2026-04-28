@@ -91,7 +91,8 @@ export const portfolioService = {
         const updatedConstraints = {
           ...(currentIps?.constraints_json || {}),
           portfolio_prediction: {
-            predicted_return_1y: aiDraft.predicted_return_1y,
+            predicted_return_low: aiDraft.predicted_return_low,
+            predicted_return_high: aiDraft.predicted_return_high,
             confidence_score: aiDraft.confidence_score,
             prediction_rationale: aiDraft.prediction_rationale
           }

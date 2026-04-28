@@ -385,10 +385,22 @@ export default function PortfolioEditor({ portfolio, onSave, viewerRole, client 
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div className="bg-white/60 backdrop-blur-sm p-3 rounded-lg border border-white/40">
-              <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Expected Return</p>
+              <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Expected Range (1-Year)</p>
               <p className="text-xl sm:text-2xl font-mono font-bold text-violet-700">
-                {portfolio.ips.constraints_json.portfolio_prediction.predicted_return_1y > 0 ? '+' : ''}
-                {portfolio.ips.constraints_json.portfolio_prediction.predicted_return_1y?.toFixed(2)}%
+                {portfolio.ips.constraints_json.portfolio_prediction.predicted_return_low !== undefined ? (
+                  <>
+                    {portfolio.ips.constraints_json.portfolio_prediction.predicted_return_low > 0 ? '+' : ''}
+                    {portfolio.ips.constraints_json.portfolio_prediction.predicted_return_low.toFixed(2)}% 
+                    <span className="mx-2 text-slate-300">/</span>
+                    {portfolio.ips.constraints_json.portfolio_prediction.predicted_return_high > 0 ? '+' : ''}
+                    {portfolio.ips.constraints_json.portfolio_prediction.predicted_return_high.toFixed(2)}%
+                  </>
+                ) : (
+                  <>
+                    {(portfolio.ips.constraints_json.portfolio_prediction.predicted_return_1y || 0) > 0 ? '+' : ''}
+                    {(portfolio.ips.constraints_json.portfolio_prediction.predicted_return_1y || 0).toFixed(2)}%
+                  </>
+                )}
               </p>
             </div>
             <div className="bg-white/60 backdrop-blur-sm p-3 rounded-lg border border-white/40">
